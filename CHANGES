@@ -1,4 +1,6 @@
                                                          -*- coding: utf-8 -*-
+  *) [TS-1627] Support requests with payload
+
 Changes with Apache Traffic Server 3.2.0
   *) [TS-1286] Cleanup some code around freelists and allocators.
 
