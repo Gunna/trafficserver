@@ -410,15 +410,14 @@ public:
   /** @return current inactivity_timeout value in nanosecs */
   virtual ink_hrtime get_inactivity_timeout() = 0;
 
-  /** @set the flowctr in read/write side of the vconnect in bytes/s
-  * op = VIO::READ, flow_ctl for read
-  * op = VIO::WRITE, flow_ctl for write
-  * flowctr > 0, max bps on the op side
-  * flowctr = 0, no flow_ctr on the op side
+  /** @set the limit rate of send
+  * limit_rate <= 0, no limit (send as fast as possible)
+  * limit_rate > 0, max rate of send
+  * limit_rate_after, the size that send with no limit
   */
-  virtual void set_flow_ctl(int op, uint64_t flowctr = 0) = 0;
+  virtual void set_flow_ctl(int64_t limit_rate, int64_t limit_rate_after = 0) = 0;
 
-  virtual void cancel_flow_ctl(int op) = 0;
+  virtual void cancel_flow_ctl() = 0;
 
   /** Returns local sockaddr storage. */
   sockaddr const* get_local_addr();

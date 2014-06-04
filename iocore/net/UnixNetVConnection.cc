@@ -201,8 +201,7 @@ close_UnixNetVConnection(UnixNetVConnection *vc, EThread *t)
     nh->write_enable_list.remove(vc);
     vc->write.in_enabled_list = 0;
   }
-  vc->read_fct.reset();
-  vc->write_fct.reset();
+  vc->fct.reset();
   vc->free(t);
 }
 
@@ -296,7 +295,7 @@ read_from_net(NetHandler *nh, UnixNetVConnection *vc, EThread *thread)
     return;
   }
   // if it is not enabled.
-  if (!s->enabled || s->vio.op != VIO::READ || vc->read_fct.e_flowctl) {
+  if (!s->enabled || s->vio.op != VIO::READ) {
     read_disable(nh, vc);
     return;
   }
@@ -413,17 +412,6 @@ read_from_net(NetHandler *nh, UnixNetVConnection *vc, EThread *thread)
     read_disable(nh, vc);
     return;
   }
-  // re caculate the flow control
-  if (vc->read_fct.bps_max) {
-    ink_debug_assert(!vc->read_fct.e_flowctl);
-    ink_hrtime now = ink_get_hrtime();
-    ink_hrtime next_time = vc->read_fct.t_start + 8 * s->vio.ndone * HRTIME_SECONDS(1) / vc->read_fct.bps_max - now;
-    if (next_time > HRTIME_MSECONDS(50)) {
-      vc->read_fct.e_flowctl = vc->thread->schedule_in_local(vc, next_time);
-      read_disable(nh, vc);
-      return;
-    }
-  }
 
   read_reschedule(nh, vc);
 }
@@ -487,7 +475,7 @@ write_to_net_io(NetHandler *nh, UnixNetVConnection *vc, EThread *thread)
     return;
   }
   // If it is not enabled,add to WaitList.
-  if (!s->enabled || s->vio.op != VIO::WRITE || vc->write_fct.e_flowctl) {
+  if (!s->enabled || s->vio.op != VIO::WRITE || vc->fct.e_flowctl) {
     write_disable(nh, vc);
     return;
   }
@@ -530,7 +518,24 @@ write_to_net_io(NetHandler *nh, UnixNetVConnection *vc, EThread *thread)
     return;
   }
 
-  int64_t total_wrote = 0, wattempted = 0;
+  if (vc->fct.limit_rate > 0) {
+    ink_debug_assert(!vc->fct.e_flowctl);
+    ink_hrtime now = ink_get_hrtime();
+    int64_t limit = (now - vc->fct.t_start + HRTIME_SECONDS(1)) / HRTIME_MSECONDS(1) *
+      vc->fct.limit_rate / 1000 + vc->fct.limit_rate_after - s->vio.ndone;
+
+    if (limit <= 0) {
+      ink_hrtime next_time = -limit * HRTIME_SECONDS(1) / vc->fct.limit_rate; 
+      vc->fct.e_flowctl = vc->thread->schedule_in_local(vc, next_time);
+      write_disable(nh, vc);
+      return;
+    }
+
+    if (towrite > limit)
+      towrite = limit;
+  }
+
+  int64_t total_wrote = 0, wattempted = 0, lastdone = s->vio.ndone;
   int64_t r = vc->load_buffer_and_write(towrite, wattempted, total_wrote, buf);
 
   // if we have already moved some bytes successfully, summarize in r
@@ -586,14 +591,18 @@ write_to_net_io(NetHandler *nh, UnixNetVConnection *vc, EThread *thread)
       }
     }
     // re caculate the flow control
-    if (vc->write_fct.bps_max) {
-      ink_debug_assert(!vc->write_fct.e_flowctl);
-      ink_hrtime now = ink_get_hrtime();
-      ink_hrtime next_time = vc->write_fct.t_start + 8 * s->vio.ndone * HRTIME_SECONDS(1) / vc->write_fct.bps_max - now;
-      if (next_time > HRTIME_MSECONDS(50)) {
-        vc->write_fct.e_flowctl = vc->thread->schedule_in_local(vc, next_time);
-        write_disable(nh, vc);
-        return;
+    if (vc->fct.limit_rate) {
+      ink_debug_assert(!vc->fct.e_flowctl);
+      if (s->vio.ndone > vc->fct.limit_rate_after) {
+        int delay = (lastdone > vc->fct.limit_rate_after) ? 
+            (r * 1000 / vc->fct.limit_rate) :
+            (s->vio.ndone - vc->fct.limit_rate_after) * 1000 / vc->fct.limit_rate;
+
+        if (delay > 50) {
+          vc->fct.e_flowctl = vc->thread->schedule_in_local(vc, HRTIME_MSECONDS(delay));
+          write_disable(nh, vc);
+          return;
+        }
       }
     }
 
@@ -699,7 +708,6 @@ UnixNetVConnection::do_io_shutdown(ShutdownHowTo_t howto)
   switch (howto) {
   case IO_SHUTDOWN_READ:
     socketManager.shutdown(((UnixNetVConnection *) this)->con.fd, 0);
-    read_fct.reset();
     disable_read(this);
     read.vio.buffer.clear();
     read.vio.nbytes = 0;
@@ -707,7 +715,7 @@ UnixNetVConnection::do_io_shutdown(ShutdownHowTo_t howto)
     break;
   case IO_SHUTDOWN_WRITE:
     socketManager.shutdown(((UnixNetVConnection *) this)->con.fd, 1);
-    write_fct.reset();
+    fct.reset();
     disable_write(this);
     write.vio.buffer.clear();
     write.vio.nbytes = 0;
@@ -715,8 +723,7 @@ UnixNetVConnection::do_io_shutdown(ShutdownHowTo_t howto)
     break;
   case IO_SHUTDOWN_READWRITE:
     socketManager.shutdown(((UnixNetVConnection *) this)->con.fd, 2);
-    read_fct.reset();
-    write_fct.reset();
+    fct.reset();
     disable_read(this);
     disable_write(this);
     read.vio.buffer.clear();
@@ -1150,13 +1157,9 @@ UnixNetVConnection::mainEvent(int event, Event *e)
     if (e == active_timeout) {
       signal_event = VC_EVENT_ACTIVE_TIMEOUT;
       signal_timeout = &active_timeout;
-    } else if (e == read_fct.e_flowctl) {
-      read_fct.e_flowctl = NULL;
-      reenable(&read.vio);
-      return EVENT_CONT;
     } else {
-      ink_debug_assert(e == write_fct.e_flowctl);
-      write_fct.e_flowctl = NULL;
+      ink_debug_assert(e == fct.e_flowctl);
+      fct.e_flowctl = NULL;
       reenable(&write.vio);
       return EVENT_CONT;
     }

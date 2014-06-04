@@ -53,9 +53,10 @@ struct FlowControl
 {
   Event *e_flowctl;
   ink_hrtime t_start;
-  uint64_t bps_max;
+  int64_t limit_rate;
+  int64_t limit_rate_after;
 
-  FlowControl(): e_flowctl(0), t_start(0), bps_max(0)
+  FlowControl(): e_flowctl(0), t_start(0), limit_rate(0), limit_rate_after(0)
   {
   }
 
@@ -65,7 +66,8 @@ struct FlowControl
       e_flowctl = 0;
     }
     t_start = 0;
-    bps_max = 0;
+    limit_rate = 0;
+    limit_rate_after = 0;
   }
 };
 
@@ -262,8 +264,7 @@ public:
   OOB_callback *oob_ptr;
   bool from_accept_thread;
   ProbeType pt;
-  FlowControl read_fct;
-  FlowControl write_fct;
+  FlowControl fct;
 
   int startEvent(int event, Event *e);
   int acceptEvent(int event, Event *e);
@@ -273,8 +274,8 @@ public:
 
   virtual ink_hrtime get_inactivity_timeout();
   virtual ink_hrtime get_active_timeout();
-  virtual void set_flow_ctl(int op, uint64_t flowctr = 0);
-  virtual void cancel_flow_ctl(int op);
+  virtual void set_flow_ctl(int64_t limit_rate, int64_t limit_rate_after = 0);
+  virtual void cancel_flow_ctl();
 
   virtual void set_local_addr();
   virtual void set_remote_addr();
@@ -394,25 +395,19 @@ UnixNetVConnection::set_tcp_init_cwnd(int init_cwnd)
 }
 
 TS_INLINE void
-UnixNetVConnection::set_flow_ctl(int op, uint64_t flowctr)
+UnixNetVConnection::set_flow_ctl(int64_t limit_rate, int64_t limit_rate_after)
 {
-  ink_debug_assert(op == VIO::READ || op == VIO::WRITE);
+  ink_debug_assert(fct.e_flowctl == NULL);
 
-  FlowControl *fct = (op == VIO::READ) ? &read_fct : &write_fct;
-
-  ink_debug_assert(fct->e_flowctl == NULL);
-
-  fct->bps_max = flowctr;
-  fct->t_start = ink_get_hrtime();
+  fct.limit_rate = limit_rate;
+  fct.limit_rate_after = limit_rate_after;
+  fct.t_start = ink_get_hrtime();
 }
 
 TS_INLINE void
-UnixNetVConnection::cancel_flow_ctl(int op)
+UnixNetVConnection::cancel_flow_ctl()
 {
-  ink_debug_assert(op == VIO::READ || op == VIO::WRITE);
-
-  FlowControl *fct = (op == VIO::READ) ? &read_fct : &write_fct;
-  fct->reset();
+  fct.reset();
 }
 
 TS_INLINE UnixNetVConnection::~UnixNetVConnection() { }

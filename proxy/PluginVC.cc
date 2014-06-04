@@ -919,13 +919,13 @@ PluginVC::apply_options()
 }
 
 void
-PluginVC::set_flow_ctl(int op, uint64_t flow_contorl)
+PluginVC::set_flow_ctl(int64_t limit_rate, int64_t limit_rate_after)
 {
 
 }
 
 void
-PluginVC::cancel_flow_ctl(int op)
+PluginVC::cancel_flow_ctl()
 {
 
 }

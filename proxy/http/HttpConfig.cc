@@ -1259,8 +1259,8 @@ HttpConfig::startup()
   HttpEstablishStaticConfigLongLong(c.oride.sock_option_flag_out, "proxy.config.net.sock_option_flag_out");
   HttpEstablishStaticConfigLongLong(c.oride.sock_packet_mark_out, "proxy.config.net.sock_packet_mark_out");
   HttpEstablishStaticConfigLongLong(c.oride.sock_packet_tos_out, "proxy.config.net.sock_packet_tos_out");
-  HttpEstablishStaticConfigLongLong(c.oride.sock_flow_control_in, "proxy.config.net.sock_flow_control_in");
-  HttpEstablishStaticConfigLongLong(c.oride.sock_flow_control_out, "proxy.config.net.sock_flow_control_out");
+  HttpEstablishStaticConfigLongLong(c.oride.client_flow_control, "proxy.config.net.client_flow_control");
+  HttpEstablishStaticConfigLongLong(c.oride.client_flow_control_after, "proxy.config.net.client_flow_control_after");
 
   HttpEstablishStaticConfigByte(c.oride.fwd_proxy_auth_to_parent, "proxy.config.http.forward.proxy_auth_to_parent");
 
@@ -1537,8 +1537,8 @@ HttpConfig::reconfigure()
   params->oride.sock_option_flag_out = m_master.oride.sock_option_flag_out;
   params->oride.sock_packet_mark_out = m_master.oride.sock_packet_mark_out;
   params->oride.sock_packet_tos_out = m_master.oride.sock_packet_tos_out;
-  params->oride.sock_flow_control_in = m_master.oride.sock_flow_control_in;
-  params->oride.sock_flow_control_out = m_master.oride.sock_flow_control_out;
+  params->oride.client_flow_control = m_master.oride.client_flow_control;
+  params->oride.client_flow_control_after = m_master.oride.client_flow_control_after;
 
   params->oride.fwd_proxy_auth_to_parent = INT_TO_BOOL(m_master.oride.fwd_proxy_auth_to_parent);
 

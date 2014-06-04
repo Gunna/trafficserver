@@ -7871,13 +7871,13 @@ _conf_to_memberp(TSOverridableConfigKey conf,
     typ = OVERRIDABLE_TYPE_INT;
     ret = &overridableHttpConfig->sock_packet_tos_out;
     break;
-  case TS_CONFIG_NET_SOCK_FLOW_CTL_IN:
+  case TS_CONFIG_NET_CLIENT_FLOW_CTL:
     typ = OVERRIDABLE_TYPE_INT;
-    ret = &overridableHttpConfig->sock_flow_control_in;
+    ret = &overridableHttpConfig->client_flow_control;
     break;
-  case TS_CONFIG_NET_SOCK_FLOW_CTL_OUT:
+  case TS_CONFIG_NET_CLIENT_FLOW_CTL_AFTER:
     typ = OVERRIDABLE_TYPE_INT;
-    ret = &overridableHttpConfig->sock_flow_control_out;
+    ret = &overridableHttpConfig->client_flow_control_after;
     break;
   case TS_CONFIG_HTTP_FORWARD_PROXY_AUTH_TO_PARENT:
     ret = &overridableHttpConfig->fwd_proxy_auth_to_parent;
@@ -8329,6 +8329,8 @@ TSHttpTxnConfigFind(const char* name, int length, TSOverridableConfigKey *conf, 
       cnf = TS_CONFIG_NET_SOCK_PACKET_TOS_OUT;
     else if (!strncmp(name, "proxy.config.http.cache.force_in_ram", length))
       cnf = TS_CONFIG_HTTP_CACHE_FORCE_IN_RAM;
+    else if (!strncmp(name, "proxy.config.net.client_flow_control", length))
+      cnf = TS_CONFIG_NET_CLIENT_FLOW_CTL;
     break;
 
   case 37:
@@ -8353,10 +8355,6 @@ TSHttpTxnConfigFind(const char* name, int length, TSOverridableConfigKey *conf, 
       else if (!strncmp(name, "proxy.config.net.sock_packet_mark_out", length))
         cnf = TS_CONFIG_NET_SOCK_PACKET_MARK_OUT;
       break;
-    case 'n':
-      if (!strncmp(name, "proxy.config.net.sock_flow_control_in", length))
-        cnf = TS_CONFIG_NET_SOCK_FLOW_CTL_IN;
-      break;
     }
     break;
 
@@ -8369,10 +8367,6 @@ TSHttpTxnConfigFind(const char* name, int length, TSOverridableConfigKey *conf, 
     case 's':
       if (!strncmp(name, "proxy.config.http.send_http11_requests", length))
         cnf = TS_CONFIG_HTTP_SEND_HTTP11_REQUESTS;
-      break;
-    case 't':
-      if (!strncmp(name, "proxy.config.net.sock_flow_control_out", length))
-        cnf = TS_CONFIG_NET_SOCK_FLOW_CTL_OUT;
       break;
     }
     break;
@@ -8455,6 +8449,8 @@ TSHttpTxnConfigFind(const char* name, int length, TSOverridableConfigKey *conf, 
     case 'r':
       if (!strncmp(name, "proxy.config.http.anonymize_remove_referer", length))
         cnf = TS_CONFIG_HTTP_ANONYMIZE_REMOVE_REFERER;
+      else if (!strncmp(name, "proxy.config.net.client_flow_control_after", length))
+        cnf = TS_CONFIG_NET_CLIENT_FLOW_CTL_AFTER;
       break;
     case 't':
       if (!strncmp(name, "proxy.config.net.sock_recv_buffer_size_out", length))
