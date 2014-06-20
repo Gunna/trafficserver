@@ -121,7 +121,11 @@ struct VolHeaderFooter
   uint32_t write_serial;
   uint32_t dirty;
   uint32_t sector_size;
-  uint32_t unused;                // pad out to 8 byte boundary
+#if TS_USE_DIR_SHM
+  volatile int32_t segment;               // the segment to be clear. 0 means OK.
+#else
+  uint32_t unused;               // pad out to 8 byte boundary
+#endif
 #ifdef SSD_CACHE
   SSDVolHeaderFooter ssd_header[8];
 #endif
@@ -441,6 +445,8 @@ struct Vol: public Continuation
   char *hash_id;
   INK_MD5 hash_id_md5;
   int fd;
+  int volume_number;
+  bool dir_shm;
 
   char *raw_dir;
   Dir *dir;
@@ -547,7 +553,7 @@ struct Vol: public Continuation
 
   int clear_dir();
 
-  int init(char *s, off_t blocks, off_t dir_skip, bool clear);
+  int init(char *s, int vol_no, off_t blocks, off_t dir_skip, bool clear);
 
   int handle_dir_clear(int event, void *data);
   int handle_dir_read(int event, void *data);
@@ -600,7 +606,7 @@ struct Vol: public Continuation
   uint32_t round_to_approx_size(uint32_t l);
 
   Vol()
-    : Continuation(new_ProxyMutex()), path(NULL), fd(-1),
+    : Continuation(new_ProxyMutex()), path(NULL), fd(-1), volume_number(0), dir_shm(false),
       dir(0), buckets(0), recover_pos(0), prev_recover_pos(0), scan_pos(0), skip(0), start(0),
       len(0), data_blocks(0), hit_evacuate_window(0), agg_todo_size(0), agg_buf_pos(0), trigger(0),
       evacuate_size(0), disk(NULL), last_sync_serial(0), last_write_serial(0), recover_wrapped(false),
@@ -897,6 +903,8 @@ Vol::round_to_approx_size(uint32_t l) {
   uint32_t ll = round_to_approx_dir_size(l);
   return ROUND_TO_SECTOR(this, ll);
 }
+
+void dir_init_segment(int s, Vol *d);
 
 #ifdef SSD_CACHE
 inline bool

@@ -109,6 +109,7 @@ uint64_t size_trans_alloced = 0;
 uint64_t size_trans_freed = 0;
 uint64_t num_transistor_in_ssd = 0;
 #endif
+static volatile uint64_t used_direntries = 0;
 static volatile int initialize_disk = 0;
 Cache *caches[NUM_CACHE_FRAG_TYPES] = { 0 };
 CacheSync *cacheDirSync = 0;
@@ -172,6 +173,28 @@ struct VolInitInfo
       vol_aio[i].mutex.clear();
     }
     free(vol_h_f);
+  }
+};
+
+struct VolInit : public Continuation
+{
+  Vol *vol;
+  char *path;
+  off_t blocks;
+  int64_t offset;
+  bool vol_clear;
+  int vol_number;
+
+  int mainEvent(int, void *) {
+    vol->init(path, vol_number, blocks, offset, vol_clear);
+    mutex.clear();
+    delete this;
+    return EVENT_DONE;
+  }
+
+  VolInit(Vol *v, char *p, off_t b, int64_t o, bool c, int n) : Continuation(v->mutex),
+    vol(v), path(p), blocks(b), offset(o), vol_clear(c), vol_number(n) {
+    SET_HANDLER(&VolInit::mainEvent);
   }
 };
 
@@ -1030,10 +1053,8 @@ CacheProcessor::cacheInitialized()
   int64_t total_size = 0;
   uint64_t total_cache_bytes = 0;
   uint64_t total_direntries = 0;
-  uint64_t used_direntries = 0;
   uint64_t vol_total_cache_bytes = 0;
   uint64_t vol_total_direntries = 0;
-  uint64_t vol_used_direntries = 0;
   Vol *vol;
 
   ProxyMutex *mutex = this_ethread()->mutex;
@@ -1113,11 +1134,6 @@ CacheProcessor::cacheInitialized()
           vol_total_direntries = gvol[i]->buckets * gvol[i]->segments * DIR_DEPTH;
           total_direntries += vol_total_direntries;
           CACHE_VOL_SUM_DYN_STAT(cache_direntries_total_stat, vol_total_direntries);
-
-
-          vol_used_direntries = dir_entries_used(gvol[i]);
-          CACHE_VOL_SUM_DYN_STAT(cache_direntries_used_stat, vol_used_direntries);
-          used_direntries += vol_used_direntries;
         }
 
       } else {
@@ -1169,12 +1185,6 @@ CacheProcessor::cacheInitialized()
           vol_total_direntries = gvol[i]->buckets * gvol[i]->segments * DIR_DEPTH;
           total_direntries += vol_total_direntries;
           CACHE_VOL_SUM_DYN_STAT(cache_direntries_total_stat, vol_total_direntries);
-
-
-          vol_used_direntries = dir_entries_used(gvol[i]);
-          CACHE_VOL_SUM_DYN_STAT(cache_direntries_used_stat, vol_used_direntries);
-          used_direntries += vol_used_direntries;
-
         }
       }
       switch (cache_config_ram_cache_compress) {
@@ -1371,8 +1381,9 @@ Vol::clear_dir()
 }
 
 int
-Vol::init(char *s, off_t blocks, off_t dir_skip, bool clear)
+Vol::init(char *s, int vol_no, off_t blocks, off_t dir_skip, bool clear)
 {
+  volume_number = vol_no;
   dir_skip = ROUND_TO_STORE_BLOCK((dir_skip < START_POS ? START_POS : dir_skip));
   path = ats_strdup(s);
   const size_t hash_id_size = strlen(s) + 32;
@@ -1400,7 +1411,61 @@ Vol::init(char *s, off_t blocks, off_t dir_skip, bool clear)
   int evac_len = (int) evacuate_size * sizeof(DLL<EvacuationBlock>);
   evacuate = (DLL<EvacuationBlock> *)ats_malloc(evac_len);
   memset(evacuate, 0, evac_len);
+#if TS_USE_DIR_SHM
+  key_t key;
+  int shmid;
+  struct shmid_ds shm_buf;
+  bool shm_exist = false;
+  bool use_shm = false;
+  if ((key = ftok(path, volume_number)) == -1)
+  {
+    Note("ftok: %s, %d, %s", path, volume_number, strerror(errno));
+    goto Ldone;
+  }
 
+  shmid = shmget(key, vol_dirlen(this), SHM_R | SHM_W | IPC_CREAT | IPC_EXCL);
+  if (shmid == -1)
+  {
+    if (errno != EEXIST) {
+      Note("shmget: %s", strerror(errno));
+      goto Ldone;
+    }
+    shmid = shmget(key, 0, 0);
+    if (shmctl(shmid, IPC_STAT, &shm_buf) == -1)
+    {
+      Note("shmctl: %s", strerror(errno));
+      shmctl(shmid, IPC_RMID, NULL);
+      goto Ldone;
+    }
+    if (shm_buf.shm_segsz != vol_dirlen(this))
+    {
+      shmctl(shmid, IPC_RMID, NULL);
+      shmid = shmget(key, vol_dirlen(this), SHM_R | SHM_W | IPC_CREAT);
+      if (shmid == -1) {
+        Note("shmget: %s", strerror(errno));
+        goto Ldone;
+      }
+    } else
+      shm_exist = true;
+  }
+  if (shmctl(shmid, SHM_LOCK, NULL) == -1)
+  {
+    Note("shmctl: %s", strerror(errno));
+    shmctl(shmid, IPC_RMID, NULL);
+    goto Ldone;
+  }
+  raw_dir = (char *) shmat(shmid, NULL, 0);
+  if (raw_dir == (char *) -1)
+  {
+    Note("shmat: %s", strerror(errno));
+    shmctl(shmid, IPC_RMID, NULL);
+    goto Ldone;
+  }
+  use_shm = true;
+  dir_shm = shm_exist;
+Ldone:
+  if (!use_shm)
+#endif
   raw_dir = (char *)ats_memalign(sysconf(_SC_PAGESIZE), vol_dirlen(this));
   dir = (Dir *) (raw_dir + vol_headerlen(this));
   header = (VolHeaderFooter *) raw_dir;
@@ -1424,6 +1489,26 @@ Vol::init(char *s, off_t blocks, off_t dir_skip, bool clear)
     Note("clearing cache directory '%s'", hash_id);
     return clear_dir();
   }
+
+#if TS_USE_DIR_SHM
+  if (dir_shm) {
+    if (header->segment != 0) {
+      dir_init_segment(header->segment - 1, this);
+      header->segment = 0;
+    }
+
+    io.aiocb.aio_fildes = fd;
+    io.aiocb.aio_nbytes = vol_dirlen(this);
+    io.aiocb.aio_buf = raw_dir;
+    io.action = this;
+    io.thread = AIO_CALLBACK_THREAD_ANY;
+    io.then = 0;
+    io.aio_result = io.aiocb.aio_nbytes;
+    init_info = 0;
+    
+    return handle_dir_read(AIO_EVENT_DONE, &io);
+  }
+#endif
 
   init_info = new VolInitInfo();
   int footerlen = ROUND_TO_STORE_BLOCK(sizeof(VolHeaderFooter));
@@ -1778,7 +1863,10 @@ Ldone:{
       Note("recovery clearing offsets [%" PRIu64 ", %" PRIu64 "] sync_serial %d next %d\n",
            header->write_pos, recover_pos, header->sync_serial, next_sync_serial);
     footer->sync_serial = header->sync_serial = next_sync_serial;
-
+#if TS_USE_DIR_SHM
+    if (!init_info)
+      init_info = new VolInitInfo();
+#endif
     for (int i = 0; i < 3; i++) {
       AIOCallback *aio = &(init_info->vol_aio[i]);
       aio->aiocb.aio_fildes = fd;
@@ -1893,20 +1981,16 @@ Vol::dir_init_done(int event, void *data)
 {
   (void) event;
   (void) data;
-  if (!cache->cache_read_done) {
-    eventProcessor.schedule_in(this, HRTIME_MSECONDS(5), ET_CALL);
-    return EVENT_CONT;
-  } else {
-    int vol_no = ink_atomic_increment(&gnvol, 1);
-    ink_assert(!gvol[vol_no]);
-    gvol[vol_no] = this;
-    SET_HANDLER(&Vol::aggWrite);
-    if (fd == -1)
-      cache->vol_initialized(0);
-    else
-      cache->vol_initialized(1);
-    return EVENT_DONE;
-  }
+  int vol_no = ink_atomic_increment(&gnvol, 1);
+  ink_assert(!gvol[vol_no]);
+  gvol[vol_no] = this;
+
+  SET_HANDLER(&Vol::aggWrite);
+  if (fd == -1)
+    cache->vol_initialized(0);
+  else
+    cache->vol_initialized(this);
+  return EVENT_DONE;
 }
 
 #ifdef SSD_CACHE
@@ -2247,9 +2331,14 @@ build_vol_hash_table(CacheHostRecord *cp)
 }
 
 void
-Cache::vol_initialized(bool result) {
-  if (result)
+Cache::vol_initialized(Vol *vol) {
+  if (vol) {
+    ProxyMutex *mutex = vol->mutex;
+    uint64_t vol_used_direntries = dir_entries_used(vol);
+    CACHE_VOL_SUM_DYN_STAT(cache_direntries_used_stat, vol_used_direntries);
+    ink_atomic_increment(&used_direntries, vol_used_direntries);
     ink_atomic_increment(&total_good_nvol, 1);
+  }
   if (total_nvol == ink_atomic_increment(&total_initialized_vol, 1) + 1)
     open_done();
 }
@@ -2391,7 +2480,6 @@ Cache::open(bool clear, bool fix) {
   NOWARN_UNUSED(fix);
   int i;
   off_t blocks = 0;
-  cache_read_done = 0;
   total_initialized_vol = 0;
   total_nvol = 0;
   total_good_nvol = 0;
@@ -2402,6 +2490,19 @@ Cache::open(bool clear, bool fix) {
 
   CacheVol *cp = cp_list.head;
   for (; cp; cp = cp->link.next) {
+    if (cp->scheme == scheme) {
+      for (i = 0; i < gndisks; i++) {
+        if (cp->disk_vols[i] && !DISK_BAD(cp->disk_vols[i]->disk)) {
+          total_nvol += cp->disk_vols[i]->num_volblocks;
+        }
+      }
+    }
+  }
+
+  if (total_nvol == 0)
+    return open_done();
+
+  for (cp = cp_list.head; cp; cp = cp->link.next) {
     if (cp->scheme == scheme) {
       cp->vols = (Vol **)ats_malloc(cp->num_vols * sizeof(Vol *));
       int vol_no = 0;
@@ -2417,19 +2518,16 @@ Cache::open(bool clear, bool fix) {
             cp->vols[vol_no]->cache_vol = cp;
             blocks = q->b->len;
 
-            bool vol_clear = clear || d->cleared || q->new_block;
-            cp->vols[vol_no]->init(d->path, blocks, q->b->offset, vol_clear);
-            vol_no++;
             cache_size += blocks;
+            bool vol_clear = clear || d->cleared || q->new_block;
+            eventProcessor.schedule_imm_signal(NEW (new VolInit(cp->vols[vol_no], d->path, blocks, q->b->offset, vol_clear, cp->vol_number)));
+
+            ++vol_no;
           }
         }
       }
-      total_nvol += vol_no;
     }
   }
-  if (total_nvol == 0)
-    return open_done();
-  cache_read_done = 1;
   return 0;
 }
 

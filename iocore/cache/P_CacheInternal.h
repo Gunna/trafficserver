@@ -1177,7 +1177,6 @@ class CacheHostTable;
 
 struct Cache
 {
-  volatile int cache_read_done;
   volatile int total_good_nvol;
   volatile int total_nvol;
   volatile int ready;
@@ -1220,14 +1219,14 @@ struct Cache
   Action *link(Continuation *cont, CacheKey *from, CacheKey *to, CacheFragType type, char *hostname, int host_len);
   Action *deref(Continuation *cont, CacheKey *key, CacheFragType type, char *hostname, int host_len);
 
-  void vol_initialized(bool result);
+  void vol_initialized(Vol *vol);
 
   int open_done();
 
   Vol *key_to_vol(CacheKey *key, char *hostname, int host_len);
 
   Cache()
-    : cache_read_done(0), total_good_nvol(0), total_nvol(0), ready(CACHE_INITIALIZING), cache_size(0),  // in store block size
+    : total_good_nvol(0), total_nvol(0), ready(CACHE_INITIALIZING), cache_size(0),  // in store block size
       hosttable(NULL), total_initialized_vol(0), scheme(CACHE_NONE_TYPE)
     { }
 };

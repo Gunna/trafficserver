@@ -665,8 +665,15 @@ Lagain:
           //ink_assert(dir_offset(e) * CACHE_BLOCK_SIZE < d->len);
           return 1;
         } else {                // delete the invalid entry
+#if TS_USE_DIR_SHM
+          d->header->segment = s + 1;
+#endif
           CACHE_DEC_DIR_USED(d->mutex);
           e = dir_delete_entry(e, p, s, d);
+#if TS_USE_DIR_SHM
+          // write barrier
+          d->header->segment = 0;
+#endif
           continue;
         }
       } else
@@ -692,6 +699,9 @@ dir_insert(CacheKey *key, Vol *d, Dir *to_part)
   ink_debug_assert(d->mutex->thread_holding == this_ethread());
   int s = key->word(0) % d->segments, l;
   int bi = key->word(1) % d->buckets;
+#if TS_USE_DIR_SHM
+  d->header->segment = s + 1;
+#endif
   ink_assert(dir_approx_size(to_part) <= MAX_FRAG_SIZE + sizeofDoc);
   Dir *seg = dir_segment(s, d);
   Dir *e = NULL;
@@ -739,6 +749,9 @@ Lfill:
   CHECK_DIR(d);
   d->header->dirty = 1;
   CACHE_INC_DIR_USED(d->mutex);
+#if TS_USE_DIR_SHM
+  d->header->segment = 0;
+#endif
   return 1;
 }
 
@@ -753,6 +766,9 @@ dir_overwrite(CacheKey *key, Vol *d, Dir *dir, Dir *overwrite, bool must_overwri
   Dir *b = dir_bucket(bi, seg);
   unsigned int t = DIR_MASK_TAG(key->word(2));
   int res = 1;
+#if TS_USE_DIR_SHM
+  d->header->segment = s + 1;
+#endif
 #ifdef LOOP_CHECK_MODE
   int loop_count = 0;
   bool loop_possible = true;
@@ -779,8 +795,12 @@ Lagain:
         goto Lfill;
       e = next_dir(e, seg);
     } while (e);
-  if (must_overwrite)
+  if (must_overwrite) {
+#if TS_USE_DIR_SHM
+    d->header->segment = 0;
+#endif
     return 0;
+  }
   res = 0;
   // get from this row first
   e = b;
@@ -812,6 +832,9 @@ Lfill:
          e, key->word(0), d->fd, bi, e, t, dir_tag(e), dir_offset(e));
   CHECK_DIR(d);
   d->header->dirty = 1;
+#if TS_USE_DIR_SHM
+  d->header->segment = 0;
+#endif
   return res;
 }
 
@@ -825,6 +848,9 @@ dir_delete(CacheKey *key, Vol *d, Dir *del)
   Dir *e = NULL, *p = NULL;
 #ifdef LOOP_CHECK_MODE
   int loop_count = 0;
+#endif
+#if TS_USE_DIR_SHM
+  d->header->segment = s + 1;
 #endif
   Vol *vol = d;
   CHECK_DIR(d);
@@ -843,12 +869,18 @@ dir_delete(CacheKey *key, Vol *d, Dir *del)
         CACHE_DEC_DIR_USED(d->mutex);
         dir_delete_entry(e, p, s, d);
         CHECK_DIR(d);
+#if TS_USE_DIR_SHM
+        d->header->segment = 0;
+#endif
         return 1;
       }
       p = e;
       e = next_dir(e, seg);
     } while (e);
   CHECK_DIR(d);
+#if TS_USE_DIR_SHM
+  d->header->segment = 0;
+#endif
   return 0;
 }
 
@@ -1014,7 +1046,7 @@ dir_entries_used(Vol *d)
  */
 
 void
-sync_cache_dir_on_shutdown(void)
+sync_cache_dir_on_shutdown(bool restart)
 {
   Debug("cache_dir_sync", "sync started");
   char *buf = NULL;
@@ -1106,6 +1138,10 @@ sync_cache_dir_on_shutdown(void)
       }
 #endif
 
+#if TS_USE_DIR_SHM
+      if (restart)
+        continue;
+#endif
     CHECK_DIR(d);
     memcpy(buf, d->raw_dir, dirlen);
     size_t B = d->header->sync_serial & 1;

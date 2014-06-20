@@ -1809,8 +1809,8 @@ main(int argc, char **argv)
 
     void *mgmt_restart_shutdown_callback(void *, char *, int data_len);
 
-    pmgmt->registerMgmtCallback(MGMT_EVENT_SHUTDOWN, mgmt_restart_shutdown_callback, NULL);
-    pmgmt->registerMgmtCallback(MGMT_EVENT_RESTART, mgmt_restart_shutdown_callback, NULL);
+    pmgmt->registerMgmtCallback(MGMT_EVENT_SHUTDOWN, mgmt_restart_shutdown_callback, (void *) -MGMT_EVENT_SHUTDOWN);
+    pmgmt->registerMgmtCallback(MGMT_EVENT_RESTART, mgmt_restart_shutdown_callback, (void *) -MGMT_EVENT_RESTART);
 
     // The main thread also becomes a net thread.
     ink_set_thread_name("[ET_NET 0]");
@@ -1931,9 +1931,9 @@ REGRESSION_TEST(Hdrs) (RegressionTest * t, int atype, int *pstatus) {
 #endif
 
 void *
-mgmt_restart_shutdown_callback(void *, char *, int data_len)
+mgmt_restart_shutdown_callback(void *op_data, char *, int data_len)
 {
   NOWARN_UNUSED(data_len);
-  sync_cache_dir_on_shutdown();
+  sync_cache_dir_on_shutdown(((intptr_t) op_data == -MGMT_EVENT_RESTART));
   return NULL;
 }

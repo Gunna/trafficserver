@@ -321,7 +321,8 @@ int dir_segment_accounted(int s, Vol *d, int offby = 0,
                           int *free = 0, int *used = 0,
                           int *empty = 0, int *valid = 0, int *agg_valid = 0, int *avg_size = 0);
 uint64_t dir_entries_used(Vol *d);
-void sync_cache_dir_on_shutdown();
+void sync_cache_dir_on_shutdown(bool restart);
+void dir_init_segment(int s, Vol *d);
 
 // Global Data
 

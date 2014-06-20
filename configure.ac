@@ -1109,6 +1109,19 @@ AX_LIB_READLINE
 if test "x${enable_spdy}" = "xyes"; then
   PKG_CHECK_MODULES([SPDYLAY],[libspdylay])
 fi
+#
+# Options for use share memory
+#
+AC_MSG_CHECKING([whether to use share memory])
+AC_ARG_ENABLE([shm],
+	[AS_HELP_STRING([--enable-shm], [dir use the share memory])],
+	[],
+	[use_shm="no"])
+AC_MSG_RESULT([$use_shm])
+TS_ARG_ENABLE_VAR([use], [shm])
+AC_SUBST(use_shm)
+
+
 
 # -----------------------------------------------------------------------------
 # 5. CHECK FOR HEADER FILES
