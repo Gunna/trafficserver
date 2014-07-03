@@ -1010,8 +1010,6 @@ public:
     remap_plugin_info::_tsremap_os_response *fp_tsremap_os_response;
     void* remap_plugin_instance;
     HTTPStatus http_return_code;
-    int return_xbuf_size;
-    char return_xbuf[HTTP_TRANSACT_STATE_MAX_XBUF_SIZE];
     void *user_args[HTTP_SSN_TXN_MAX_USER_ARG];
 
     int api_txn_active_timeout_value;
@@ -1039,7 +1037,6 @@ public:
     bool client_connection_enabled;
     bool server_busy;
     bool acl_filtering_performed;
-    bool return_xbuf_plain;
 
     bool api_release_server_session;
     bool api_cleanup_cache_read;
@@ -1116,8 +1113,8 @@ public:
         next_action(STATE_MACHINE_ACTION_UNDEFINED),
         api_next_action(STATE_MACHINE_ACTION_UNDEFINED),
         transact_return_point(NULL),
-        internal_msg_buffer(0),
-        internal_msg_buffer_type(0),
+        internal_msg_buffer(NULL),
+        internal_msg_buffer_type(NULL),
         internal_msg_buffer_size(0),
         internal_msg_buffer_fast_allocator_size(-1),
         internal_msg_buffer_index(0),
@@ -1140,7 +1137,6 @@ public:
         fp_tsremap_os_response(NULL),
         remap_plugin_instance(0),
         http_return_code(HTTP_STATUS_NONE),
-        return_xbuf_size(0),
         api_txn_active_timeout_value(-1),
         api_txn_connect_timeout_value(-1),
         api_txn_dns_timeout_value(-1),
@@ -1153,7 +1149,6 @@ public:
         client_connection_enabled(true),
         server_busy(false),
         acl_filtering_performed(false),
-        return_xbuf_plain(false),
         api_release_server_session(false),
         api_cleanup_cache_read(false),
         api_skip_cache_lookup(false),
@@ -1210,7 +1205,6 @@ public:
       via_string[VIA_DETAIL_SERVER_DESCRIPTOR] = VIA_DETAIL_SERVER_DESCRIPTOR_STRING;
       via_string[MAX_VIA_INDICES] = '\0';
 
-      memset(return_xbuf, 0, sizeof(return_xbuf));
       memset(user_args, 0, sizeof(user_args));
     }
 
@@ -1240,11 +1234,8 @@ public:
       record_transaction_stats();
       m_magic = HTTP_TRANSACT_MAGIC_DEAD;
 
-      if (internal_msg_buffer) {
-        free_internal_msg_buffer(internal_msg_buffer, internal_msg_buffer_fast_allocator_size);
-      }
-      if (internal_msg_buffer_type)
-        ats_free(internal_msg_buffer_type);
+      free_internal_msg_buffer();
+      ats_free(internal_msg_buffer_type);
 
       ParentConfig::release(parent_params);
       parent_params = NULL;
@@ -1316,10 +1307,21 @@ public:
       }
     }
 
+    void
+    free_internal_msg_buffer()
+    {
+      if (internal_msg_buffer) {
+        if (internal_msg_buffer_fast_allocator_size >= 0) {
+          ioBufAllocator[internal_msg_buffer_fast_allocator_size].free_void(internal_msg_buffer);
+        } else {
+          ats_free(internal_msg_buffer);
+        }
+        internal_msg_buffer = NULL;
+      }
+      internal_msg_buffer_size = 0;
+    }
+
   }; // End of State struct.
-
-
-  static void free_internal_msg_buffer(char *buffer, int64_t size);
 
   static void HandleBlindTunnel(State* s);
   static void StartRemapRequest(State* s);
@@ -1475,17 +1477,6 @@ public:
 };
 
 typedef void (*TransactEntryFunc_t) (HttpTransact::State* s);
-
-inline void
-HttpTransact::free_internal_msg_buffer(char *buffer, int64_t size)
-{
-  ink_debug_assert(buffer);
-  if (size >= 0) {
-    ioBufAllocator[size].free_void(buffer);
-  } else {
-    ats_free(buffer);
-  }
-}
 
 inline const char*
 conn_state_enum_to_str(HttpTransact::ServerState_t the_state)
