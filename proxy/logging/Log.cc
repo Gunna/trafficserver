@@ -1030,22 +1030,22 @@ Log::init(int flags)
     REC_RegisterConfigUpdateFunc("proxy.local.log.collation_mode",
                                  &Log::handle_logging_mode_change, NULL);
 
-    // we must create the flush thread since it takes care of the
-    // periodic events (should this behavior be reversed ?)
-    //
-    create_threads();
+  }
+  // we must create the flush thread since it takes care of the
+  // periodic events (should this behavior be reversed ?)
+  //
+  create_threads();
 
 #ifndef INK_SINGLE_THREADED
-    eventProcessor.schedule_every(NEW (new PeriodicWakeup(collation_preproc_threads, 1)),
-                                  HRTIME_SECOND, ET_CALL);
+  eventProcessor.schedule_every(NEW (new PeriodicWakeup(collation_preproc_threads, 1)),
+      HRTIME_SECOND, ET_CALL);
 #endif
-    init_status |= PERIODIC_WAKEUP_SCHEDULED;
+  init_status |= PERIODIC_WAKEUP_SCHEDULED;
 
-    // Clear any stat values that need to be reset on startup
-    //
-    RecSetRawStatSum(log_rsb, log_stat_log_files_open_stat, 0);
-    RecSetRawStatCount(log_rsb, log_stat_log_files_open_stat, 0);
-  }
+  // Clear any stat values that need to be reset on startup
+  //
+  RecSetRawStatSum(log_rsb, log_stat_log_files_open_stat, 0);
+  RecSetRawStatCount(log_rsb, log_stat_log_files_open_stat, 0);
 
   if (config_flags & LOGCAT) {
     init_fields();
