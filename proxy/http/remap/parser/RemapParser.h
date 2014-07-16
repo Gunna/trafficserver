@@ -49,8 +49,15 @@ class RemapParser {
       }
     }
 
-    inline void trim(char *&str, char *&strEnd) {
+    void trim(char *&str, char *&strEnd)
+    {
+      char *ptr;
+
       trimLeft(str, strEnd);
+      ptr = (char*)memchr(str, '#', strEnd-str);
+      if (ptr)
+        strEnd = ptr;
+
       trimRight(str, strEnd);
     }
 
