@@ -37,6 +37,7 @@
 #include "PluginVC.h"
 #include "ReverseProxy.h"
 #include "RemapProcessor.h"
+#include "RealStat.h"
 
 #include "HttpPages.h"
 
@@ -121,6 +122,86 @@ milestone_difference_msec(const ink_hrtime start, const ink_hrtime end)
   }
   return (double) (end - start) / 1000000;
 }
+
+
+static void
+update_real_stats(HttpSM *sm)
+{
+  const char *scheme;
+  const char *host;
+  int scheme_len, host_len, port;
+  int64_t write_bytes, rt;
+  int hit, ret_code;
+  bool remap_failed;
+
+  HTTPHdr *client_request = &sm->t_state.hdr_info.client_request;
+  if (client_request->valid()) {
+    switch (sm->proto_type) {
+      case TS_NET_PROTO_HTTP:
+        scheme = "http";
+        scheme_len = strlen(scheme);
+        break;
+      case TS_NET_PROTO_HTTP_SSL:
+        scheme = "https";
+        scheme_len = strlen(scheme);
+        break;
+      case TS_NET_PROTO_HTTP_SPDY:
+        scheme = "http_spdy";
+        scheme_len = strlen(scheme);
+        break;
+      case TS_NET_PROTO_HTTP_SPDY_SSL:
+        scheme = "https_spdy";
+        scheme_len = strlen(scheme);
+        break;
+      default:
+        scheme = client_request->url_get()->scheme_get(&scheme_len);
+    }
+    host = client_request->host_get(&host_len);
+    port = client_request->m_port;
+  } else {
+    scheme = host = NULL;
+    scheme_len = host_len = 0;
+    port = 0;
+  }
+
+  write_bytes = sm->client_response_hdr_bytes + sm->client_response_body_bytes;
+  if (sm->milestones.ua_close == 0)
+    sm->milestones.ua_close = ink_get_hrtime();
+  rt = sm->milestones.ua_close - sm->milestones.ua_begin;
+
+  switch (sm->t_state.squid_codes.log_code) {
+    case SQUID_LOG_TCP_MEM_HIT:
+      hit = 2;
+      break;
+    case SQUID_LOG_TCP_HIT:
+    case SQUID_LOG_TCP_DISK_HIT:
+    case SQUID_LOG_TCP_REFRESH_HIT:
+    case SQUID_LOG_TCP_REF_FAIL_HIT:
+    case SQUID_LOG_TCP_IMS_HIT:
+    case SQUID_LOG_TCP_HIT_REDIRECT:
+    case SQUID_LOG_TCP_HIT_X_REDIRECT:
+    case SQUID_LOG_ERR_CLIENT_ABORT_HIT:
+      hit = 1;
+      break;
+    default:
+      hit = 0;
+  }
+
+  if (sm->t_state.hdr_info.client_response.valid())
+    ret_code = sm->t_state.hdr_info.client_response.status_get();
+  else
+    ret_code = 0; // means client abort
+
+  remap_failed = !sm->t_state.url_remap_success;
+
+  rst.add_one(scheme, scheme_len, host, host_len, write_bytes, rt, hit, ret_code, remap_failed, port);
+}
+
+
+
+
+
+
 
 void
 HttpSM::_make_scatter_list(HttpSM * prototype)
@@ -6444,6 +6525,8 @@ HttpSM::update_stats()
       Log::error("failed to log transaction for at least one log object");
     }
   }
+
+  update_real_stats(this);
 
   if (is_action_tag_set("bad_length_state_dump")) {
     if (t_state.hdr_info.client_response.valid() && t_state.hdr_info.client_response.status_get() == HTTP_STATUS_OK) {

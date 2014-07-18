@@ -1194,6 +1194,8 @@ RecordElement RecordsConfig[] = {
   // Jira TS-21
   {RECT_CONFIG, "proxy.config.stats.snap_file", RECD_STRING, "stats.snap", RECU_RESTART_TS, RR_NULL, RECC_NULL, NULL, RECA_NULL}
   ,
+  {RECT_CONFIG, "proxy.config.stats.real_snap_file", RECD_STRING, "real_stats.snap", RECU_RESTART_TS, RR_NULL, RECC_NULL, NULL, RECA_NULL}
+  ,
 
   //        ###########
   //        # Parsing #
@@ -1270,6 +1272,10 @@ RecordElement RecordsConfig[] = {
   {RECT_CONFIG, "proxy.config.log.collation_host", RECD_STRING, NULL, RECU_DYNAMIC, RR_NULL, RECC_STR, "^[^[:space:]]*$", RECA_NULL}
   ,
   {RECT_CONFIG, "proxy.config.log.collation_port", RECD_INT, "8085", RECU_DYNAMIC, RR_REQUIRED, RECC_INT, "[0-65535]", RECA_NULL}
+  ,
+  {RECT_CONFIG, "proxy.config.log.real_collation_host", RECD_STRING, NULL, RECU_DYNAMIC, RR_NULL, RECC_STR, "^[^[:space:]]*$", RECA_NULL}
+  ,
+  {RECT_CONFIG, "proxy.config.log.real_collation_port", RECD_INT, "8086", RECU_DYNAMIC, RR_REQUIRED, RECC_INT, "[0-65535]", RECA_NULL}
   ,
   {RECT_CONFIG, "proxy.config.log.collation_secret", RECD_STRING, "foobar", RECU_DYNAMIC, RR_NULL, RECC_STR, ".*", RECA_NULL}
   ,
@@ -2043,6 +2049,8 @@ RecordElement RecordsConfig[] = {
   {RECT_LOCAL, "proxy.local.outgoing_ip_to_bind", RECD_STRING, NULL, RECU_NULL, RR_NULL, RECC_NULL, NULL, RECA_NULL}
   ,
   {RECT_LOCAL, "proxy.local.log.collation_mode", RECD_INT, "0", RECU_DYNAMIC, RR_NULL, RECC_INT, "[0-4]", RECA_NULL}
+  ,
+  {RECT_LOCAL, "proxy.local.log.real_collation_mode", RECD_INT, "0", RECU_DYNAMIC, RR_NULL, RECC_INT, "[0-2]", RECA_NULL}
   ,
 
   //#Prefetch configuration

@@ -127,6 +127,8 @@ traffic_server_SOURCES = \
   StatPages.h \
   StatSystem.cc \
   StatSystem.h \
+  RealStat.cc \
+  RealStat.h \
   Transform.cc \
   Transform.h \
   TransformInternal.h \
@@ -227,6 +229,7 @@ traffic_sac_LDADD = \
   ControlMatcher.o \
   CacheControl.o \
   StatSystem.o \
+  RealStat.o \
   ReverseProxy.o \
   ProxyConfig.o \
   signals.o \

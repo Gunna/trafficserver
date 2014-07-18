@@ -27,6 +27,7 @@
   Created On          : Fri Apr 3 19:41:39 1998
  ****************************************************************************/
 #include "Main.h"
+#include "RealStat.h"
 #include "StatSystem.h"
 #include "P_EventSystem.h"
 #include "Error.h"
@@ -42,7 +43,6 @@
 
 
 // variables
-
 #ifdef DEBUG
 ink_mutex http_time_lock;
 time_t last_http_local_time;
@@ -67,6 +67,7 @@ int http_handler_counts[MAX_HTTP_HANDLER_EVENTS];
 
 
 char snap_filename[PATH_NAME_MAX+1] = DEFAULT_SNAP_FILENAME;
+//char real_snap_filename[PATH_NAME_MAX+1] = DEFAULT_SNAP_FILENAME;
 
 #define DEFAULT_PERSISTENT
 
@@ -159,8 +160,20 @@ DynamicStatsString_t DynamicStatsStrings[] = {
 #undef _FOOTER
 #undef _D
 
+/*
+struct RealStatSyncer : public Continuation
+{
+  int mainEvent(int event, void *data) {
+    rst.write_file();
+    return EVENT_CONT;
+  }
 
-
+  RealStatSyncer() : Continuation(new_ProxyMutex())
+  {
+    SET_HANDLER(&RealStatSyncer::mainEvent);
+  }
+};
+*/
 // functions
 
 static int
@@ -212,6 +225,7 @@ clear_stats()
   }
 
   socketManager.unlink(snap_filename);
+  //socketManager.unlink(real_snap_filename);
   Debug("stats", "clear_stats: clearing statistics");
 }
 
@@ -386,6 +400,8 @@ struct SnapCont: public Continuation
 void
 start_stats_snap()
 {
+  //eventProcessor.schedule_every(new RealStatSyncer, HRTIME_SECONDS(1), ET_CALL);
+  realstat_init("");
   eventProcessor.schedule_every(NEW(new SnapCont(rusage_snap_mutex)), SNAP_USAGE_PERIOD, ET_CALL);
   if (snap_stats_every)
     eventProcessor.schedule_every(NEW(new SnapStatsContinuation()), HRTIME_SECONDS(snap_stats_every), ET_CALL);
@@ -476,6 +492,7 @@ initialize_all_global_stats()
 {
   int istat, i;
   char snap_file[PATH_NAME_MAX + 1];
+  //char real_snap_file[PATH_NAME_MAX + 1];
   char local_state_dir[PATH_NAME_MAX + 1];
 
   // Jira TS-21
@@ -495,6 +512,12 @@ initialize_all_global_stats()
   Layout::relative_to(snap_filename, sizeof(snap_filename),
                       local_state_dir, snap_file);
   Debug("stats", "stat snap filename %s", snap_filename);
+  /*REC_ReadConfigString(real_snap_file, "proxy.config.stats.real_snap_file", PATH_NAME_MAX);
+  Layout::relative_to(real_snap_filename, sizeof(real_snap_filename),
+      local_state_dir, real_snap_file);
+  Debug("stats", "real stat snap filename %s", real_snap_filename);
+*/
+  //rst.init(real_snap_filename);
 
   statPagesManager.register_http("stat", stat_callback);
 
