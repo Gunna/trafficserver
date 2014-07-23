@@ -1431,6 +1431,10 @@ HttpConfig::startup()
     }
   }
 
+  // Local Manager
+  HttpEstablishStaticConfigLongLong(c.autoconf_port, "proxy.config.admin.autoconf_port");
+  HttpEstablishStaticConfigByte(c.autoconf_localhost_only, "proxy.config.admin.autoconf.localhost_only");
+
   // Cluster time delta gets it own callback since it needs
   //  to use ink_atomic_swap
   c.cluster_time_delta = 0;
@@ -1663,6 +1667,10 @@ HttpConfig::reconfigure()
   params->number_of_redirections = m_master.number_of_redirections;
   params->post_copy_size = m_master.post_copy_size;
   params->oride.range_elimination_enabled = INT_TO_BOOL(m_master.oride.range_elimination_enabled);
+
+  // Local Manager
+  params->autoconf_port = m_master.autoconf_port;
+  params->autoconf_localhost_only = m_master.autoconf_localhost_only;
 
   m_id = configProcessor.set(m_id, params);
 

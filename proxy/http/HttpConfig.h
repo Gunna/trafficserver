@@ -835,6 +835,13 @@ public:
 
   OverridableHttpConfigParams oride;
 
+  ////////////////////
+  // Local Manager  //
+  ////////////////////
+  MgmtInt autoconf_port;
+  MgmtByte autoconf_localhost_only;
+
+
 private:
   /////////////////////////////////////
   // operator = and copy constructor //
@@ -1004,7 +1011,10 @@ HttpConfigParams::HttpConfigParams()
     ignore_accept_encoding_mismatch(0),
     ignore_accept_charset_mismatch(0),
     normalize_ae_gzip(1),
-    cache_max_rww_delay(0)
+    cache_max_rww_delay(0),
+    autoconf_port(0),
+    autoconf_localhost_only(0)
+
 {
 }
 
