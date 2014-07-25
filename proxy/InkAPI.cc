@@ -8667,5 +8667,27 @@ TSReturnCode TSSpdyAcceptHandlerSet(TSSpdyAcceptHandler fn)
   spdy_accept = (SpdyAcceptHandlerPtr) fn;
   return TS_SUCCESS;
 }
+
+TSReturnCode
+TSHttpTxnClientRespFlowCtrlSet(TSHttpTxn txnp, int64_t rate, int64_t after)
+{
+    sdk_assert(sdk_sanity_check_txn(txnp) == TS_SUCCESS);
+
+    HttpSM *sm = (HttpSM *) txnp;
+    HttpClientSession *ua_session = sm->ua_session;
+
+    if (ua_session == NULL)
+        return TS_ERROR;
+
+    NetVConnection *vc = ua_session->get_netvc();
+
+    if (vc == NULL || vc->get_socket() == 0)
+        return TS_ERROR;
+
+    vc->set_flow_ctl(rate, after);
+
+    return TS_SUCCESS;
+}
+
 #endif //TS_NO_API
 
