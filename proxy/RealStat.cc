@@ -6,10 +6,12 @@ IpAddr realstat_ip;
 RealStatCollectionAccept *real_stat_collation_accept = NULL;
 int realstat_port;
 int realstat_mode;
+int node_no;
 char real_snap_filename[PATH_NAME_MAX + 1];
 
-static const char unknow_domain[] = "unkown_domain";
+static const char unknow_domain[] = "unkown_domain http";
 static ClassAllocator<RealStatEntry> realStatEntryAllocator("RealStatEntryAllocator");
+FILE *real_stat_file = NULL;
 
 static inline
 unsigned int makeHash(const char *string, int len)
@@ -32,6 +34,18 @@ unsigned int makeHash(const char *string, int len)
   return (p[1] ^ p[0]);
 }
 
+struct RealStatSyncer : public Continuation
+{
+  int mainEvent(int event, void *data) {
+    rst.write_file(real_stat_file);
+    return EVENT_CONT;
+  }
+
+  RealStatSyncer() : Continuation(new_ProxyMutex())
+  {
+    SET_HANDLER(&RealStatSyncer::mainEvent);
+  }
+};
 
 static inline
 void set_http_code(RealStatEntry *entry, int ret_code)
@@ -137,10 +151,9 @@ RealStatTable::add_one(const char *scheme, int scheme_len, const char *host, int
     domain = p;
     memcpy(p, host, host_len);
     p += host_len;
-    *p++ = ',';
+    *p++ = ' '
     memcpy(p, scheme, scheme_len);
     p += scheme_len;
-
   } else {
     domain = unknow_domain;
     domain_len = sizeof unknow_domain - 1;
@@ -276,12 +289,12 @@ static inline
 int write_entry(FILE *file, RealStatEntry *entry)
 {
   return
-    fprintf(file, "%" PRId64 ", %.*s, %d, out_bytes %" PRId64 ", rt %" PRId64 ", count %d, hits %" PRId64 ", memhits %d, \
-      client_abort %d, 1xx %d, 200 %d, 206 %d, 2xx %d, 301 %d, 302 %d, 304 %d, 3xx %d, 400 %d, 403 %d, 404 %d, 408 %d \
-      412 %d, 416 %d, 4xx %d, 502 %d, 503 %d, 504 %d, 5xx %d, others %d\n",
-      ink_get_hrtime() / 1000, entry->domain_len, entry->domain, entry->port, entry->out_bytes, entry->rt, entry->count, entry->hits, entry->memhits,
-      entry->client_abort, entry->http_info, entry->http_ok, entry->http_partial_ok, entry->http_successful, entry->http_move_permanent,
-      entry->http_found, entry->http_not_modified, entry->http_redirection, entry->http_bad_request,
+    fprintf(file, "%" PRId64 " %d %.*s;out_bytes %" PRId64 ",rt %" PRId64 ",count %d,hits %" PRId64 ",memhits %d," 
+      "client_abort %d,1xx %d,200 %d,206 %d,2xx %d,301 %d,302 %d,304 %d,3xx %d,400 %d,403 %d,404 %d,408 %d,"
+      "412 %d,416 %d,4xx %d,502 %d,503 %d,504 %d,5xx %d,others %d\n",
+      ink_get_hrtime() / 1000, node_no, entry->domain_len, entry->domain, entry->out_bytes, entry->rt, entry->count, 
+      entry->hits, entry->memhits, entry->client_abort, entry->http_info, entry->http_ok, entry->http_partial_ok, entry->http_successful,
+      entry->http_move_permanent, entry->http_found, entry->http_not_modified, entry->http_redirection, entry->http_bad_request,
       entry->http_forbidden, entry->http_not_found, entry->http_request_timeout, entry->http_precondition_failed,
       entry->http_range_not_statisfiable, entry->http_client_error, entry->http_bad_gateway,
       entry->http_service_unavailable, entry->http_gateway_timeout, entry->http_server_error, entry->http_others);
@@ -301,18 +314,14 @@ int write_entry(MIOBuffer *buf, RealStatEntry *entry)
 }
 
 void
-RealStatTable::init(const char *filename)
+RealStatTable::init()
 {
-  file = fopen(filename, "a");
-  if (!file)
-    Warning("filename %s open failed!", filename);
-
   for (int i = 0; i < MAX_BUCKETS; ++i)
     ink_spinlock_init(&b_locks[i]);
 }
 
 void
-RealStatTable::write_file()
+RealStatTable::write_file(FILE *file)
 {
   if (!file) return;
 
@@ -400,10 +409,7 @@ void free_RealStatCollectionSM(RealStatCollectionSM *sm)
   sm->m_net_vc->do_io_close();
   sm->m_read_vio = NULL;
   sm->m_client_buffer.clear();
-  if (sm->timer) {
-    sm->timer->cancel();
-    sm->timer = NULL;
-  }
+  
   if (sm->entry) {
     realStatEntryAllocator.free(sm->entry);
     sm->entry = NULL;
@@ -426,10 +432,6 @@ RealStatCollectionSM::main_handler(int event, void *e)
       m_read_bytes_received = 0;
       p = (char *) &hdr;
       m_read_vio = m_net_vc->do_io_read(this, INT64_MAX, &m_client_buffer);
-      timer = eventProcessor.schedule_every(this, HRTIME_SECONDS(3));
-      break;
-    case EVENT_INTERVAL:
-      rst.write_file();
       break;
     case VC_EVENT_READ_READY:
       n_avail = m_client_reader->read_avail(); 
@@ -483,7 +485,6 @@ int
 RealStatClientSM::startEvent(int event, void *data)
 {
   IpEndpoint target;
-  //target.setToAnyAddr(realstat_ip.family());
   target.assign(realstat_ip, htons(realstat_port));
   SET_HANDLER(&RealStatClientSM::connectEvent);
 
@@ -570,18 +571,37 @@ void
 realstat_init(const char *run_dir)
 {
   IOCORE_EstablishStaticConfigInt32(realstat_mode, "proxy.local.log.real_collation_mode");
-  IOCORE_ReadConfigString(real_snap_filename, "proxy.config.stats.real_snap_file", PATH_NAME_MAX);
+  
+  char *p = real_snap_filename;
+  int len = strlen(run_dir);
+  memcpy(p, run_dir, len);
+  p += len;
+  if (*(p - 1) != '/')
+    *p++ = '/';
+    
+  IOCORE_ReadConfigString(p, "proxy.config.stats.real_snap_file", PATH_NAME_MAX);
 
   IOCORE_EstablishStaticConfigInt32(realstat_port, "proxy.config.log.real_collation_port");
 
   char *hostname = REC_ConfigReadString("proxy.config.log.real_collation_host");
 
-  rst.init("/tmp/real_snap.txt");
+  char *proxyname = REC_ConfigReadString("proxy.config.proxy_name");
+  node_no = atoi(proxyname);
+
+  rst.init();
   if (hostname)
     realstat_ip.load(hostname);
   if (realstat_mode == 1)
     eventProcessor.schedule_imm(NEW(new RealStatClientSM));
-  else if (realstat_mode == 2)
+  else if (realstat_mode == 2) {
+    real_stat_file = fopen(real_snap_filename, "a");
+    if (!real_stat_file) {
+      Warning("real stat file %s open failed!", real_snap_filename);
+    } else {
+      eventProcessor.schedule_every((NEW (new RealStatSyncer)), HRTIME_SECONDS(5));
+    }
+
     real_stat_collation_accept = NEW(new RealStatCollectionAccept(realstat_port));
+  }
 }
 

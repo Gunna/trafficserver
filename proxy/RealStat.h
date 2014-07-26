@@ -48,16 +48,15 @@ struct RealStatEntry
 
 struct RealStatTable
 {
-  FILE *file;
   ink_spinlock b_locks[MAX_BUCKETS];
   DList(RealStatEntry, hash_link) buckets[MAX_BUCKETS];
 
   
-  void init(const char *filename);
+  void init();
   void add_one(const char *scheme, int scheme_len, const char * host, int host_len, int64_t s,
       int64_t rt, int hit, int ret_code, bool remap_failed, short port = 0);
   void add_entry(RealStatEntry *entry);
-  void write_file();
+  void write_file(FILE *file);
   int write_buffer(MIOBuffer *buf);
 };
 
@@ -91,7 +90,6 @@ struct RealStatCollectionSM : public Continuation
 
   NetVConnection *m_net_vc;
   VIO *m_read_vio;
-  Event *timer;
 
   MIOBuffer m_client_buffer;
   RealStatHdr hdr;
