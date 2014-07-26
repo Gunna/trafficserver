@@ -151,7 +151,7 @@ RealStatTable::add_one(const char *scheme, int scheme_len, const char *host, int
     domain = p;
     memcpy(p, host, host_len);
     p += host_len;
-    *p++ = ' '
+    *p++ = ' ';
     memcpy(p, scheme, scheme_len);
     p += scheme_len;
   } else {
