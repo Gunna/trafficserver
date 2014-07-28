@@ -83,7 +83,7 @@ extern "C"
 
    typedef enum
    {
-     TS_NET_PROTO_UNKNOW = 0,
+     TS_NET_PROTO_UNKNOWN = 0,
      TS_NET_PROTO_HTTP,
      TS_NET_PROTO_HTTP_SSL,
      TS_NET_PROTO_HTTP_SPDY,

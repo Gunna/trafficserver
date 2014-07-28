@@ -539,8 +539,8 @@ RealStatClientSM::mainEvent(int event, void *data)
     case EVENT_IMMEDIATE:
       break;
     case EVENT_INTERVAL:
-      write_data();
-      m_write_vio->reenable();
+      if (write_data() > 0)
+        m_write_vio->reenable();
       break;
     case VC_EVENT_WRITE_READY:
       break;

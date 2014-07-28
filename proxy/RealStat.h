@@ -14,8 +14,8 @@ struct RealStatEntry
 
   uint32_t key;
   int32_t proto;
-  int16_t port;
-  int16_t domain_len;
+  int32_t port;
+  int32_t domain_len;
   int64_t out_bytes;
   int64_t rt; // ms
   int64_t hits;
