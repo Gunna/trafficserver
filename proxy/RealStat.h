@@ -13,6 +13,7 @@ struct RealStatEntry
   LINK(RealStatEntry, hash_link);
 
   uint32_t key;
+  int32_t proto;
   int16_t port;
   int16_t domain_len;
   int64_t out_bytes;
@@ -53,7 +54,7 @@ struct RealStatTable
 
   
   void init();
-  void add_one(const char *scheme, int scheme_len, const char * host, int host_len, int64_t s,
+  void add_one(int proto, const char * host, int host_len, int64_t s,
       int64_t rt, int hit, int ret_code, bool remap_failed, short port = 0);
   void add_entry(RealStatEntry *entry);
   void write_file(FILE *file);

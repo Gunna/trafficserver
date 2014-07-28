@@ -127,42 +127,22 @@ milestone_difference_msec(const ink_hrtime start, const ink_hrtime end)
 static void
 update_real_stats(HttpSM *sm)
 {
-  const char *scheme;
   const char *host;
-  int scheme_len, host_len, port;
+  int host_len, port;
   int64_t write_bytes, rt;
-  int hit, ret_code;
+  int hit, ret_code, proto;
   bool remap_failed;
 
   HTTPHdr *client_request = &sm->t_state.hdr_info.client_request;
   if (client_request->valid()) {
-    switch (sm->proto_type) {
-      case TS_NET_PROTO_HTTP:
-        scheme = "http";
-        scheme_len = strlen(scheme);
-        break;
-      case TS_NET_PROTO_HTTP_SSL:
-        scheme = "https";
-        scheme_len = strlen(scheme);
-        break;
-      case TS_NET_PROTO_HTTP_SPDY:
-        scheme = "http_spdy";
-        scheme_len = strlen(scheme);
-        break;
-      case TS_NET_PROTO_HTTP_SPDY_SSL:
-        scheme = "https_spdy";
-        scheme_len = strlen(scheme);
-        break;
-      default:
-        scheme = client_request->url_get()->scheme_get(&scheme_len);
-    }
     host = client_request->host_get(&host_len);
     port = client_request->m_port;
   } else {
-    scheme = host = NULL;
-    scheme_len = host_len = 0;
+    host = NULL;
+    host_len = 0;
     port = 0;
   }
+  proto = sm->proto_type;
 
   write_bytes = sm->client_response_hdr_bytes + sm->client_response_body_bytes;
   if (sm->milestones.ua_close == 0)
@@ -194,7 +174,7 @@ update_real_stats(HttpSM *sm)
 
   remap_failed = !sm->t_state.url_remap_success;
 
-  rst.add_one(scheme, scheme_len, host, host_len, write_bytes, rt, hit, ret_code, remap_failed, port);
+  rst.add_one(proto, host, host_len, write_bytes, rt, hit, ret_code, remap_failed, port);
 }
 
 

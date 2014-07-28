@@ -9,7 +9,7 @@ int realstat_mode;
 int node_no;
 char real_snap_filename[PATH_NAME_MAX + 1];
 
-static const char unknow_domain[] = "unkown_domain http";
+static const char unknown_domain[] = "unkown_domain";
 static ClassAllocator<RealStatEntry> realStatEntryAllocator("RealStatEntryAllocator");
 FILE *real_stat_file = NULL;
 
@@ -138,27 +138,20 @@ void set_http_code(RealStatEntry *entry, int ret_code)
 }
 
 void
-RealStatTable::add_one(const char *scheme, int scheme_len, const char *host, int host_len, int64_t s,
+RealStatTable::add_one(int proto, const char *host, int host_len, int64_t s,
     int64_t rt, int hit, int ret_code, bool remap_failed, short port)
 {
   const char *domain;
   int domain_len;
+  int old_proto = proto;
   short old_port = port;
 
-  if (scheme_len > 0 && host_len > 0) {
-    domain_len = scheme_len + host_len + 1;
-    char *p = (char *) alloca(domain_len);
-    domain = p;
-    memcpy(p, host, host_len);
-    p += host_len;
-    *p++ = ' ';
-    memcpy(p, scheme, scheme_len);
-    p += scheme_len;
-  } else {
-    domain = unknow_domain;
-    domain_len = sizeof unknow_domain - 1;
-    port = 0;
+  if (!host || host_len <= 0) {
+    domain = unknown_domain;
+    domain_len = sizeof unknown_domain - 1;
   }
+  domain = host;
+  domain_len = host_len;
 
   if (domain_len >= MAX_DOMAIN_LEN)
     domain_len = MAX_DOMAIN_LEN - 1;
@@ -167,8 +160,8 @@ RealStatTable::add_one(const char *scheme, int scheme_len, const char *host, int
   int old_domain_len = domain_len;
 
   if (remap_failed) {
-    domain = unknow_domain;
-    domain_len = sizeof unknow_domain - 1;
+    domain = unknown_domain;
+    domain_len = sizeof unknown_domain - 1;
   }
 
   uint32_t key = makeHash(domain, domain_len);
@@ -178,14 +171,15 @@ RealStatTable::add_one(const char *scheme, int scheme_len, const char *host, int
   ink_spinlock_acquire(&b_locks[idx]);
 
   for (entry = buckets[idx].head; entry; entry = entry->hash_link.next) {
-    if (entry->key == key && entry->domain_len == domain_len && entry->port == (short) port &&
-        !memcmp(entry->domain, domain, domain_len))
+    if (entry->key == key && entry->domain_len == domain_len && entry->proto == proto &&
+        entry->port == (short) port && !memcmp(entry->domain, domain, domain_len))
         break;
   }
 
   if (!entry) {
     entry = realStatEntryAllocator.alloc();
     entry->key = key;
+    entry->proto = proto;
     entry->port = port;
     entry->domain_len = (int16_t) domain_len;
     memcpy(entry->domain, domain, domain_len);
@@ -209,15 +203,15 @@ RealStatTable::add_one(const char *scheme, int scheme_len, const char *host, int
 
 
   if (remap_failed) {
-    if (old_domain != unknow_domain && old_domain_len > 0) {
+    if (old_domain != unknown_domain && old_domain_len > 0) {
       key = makeHash(old_domain, old_domain_len);
       idx = key % MAX_BUCKETS;
 
       ink_spinlock_acquire(&b_locks[idx]);
 
       for (entry = buckets[idx].head; entry; entry = entry->hash_link.next) {
-        if (entry->key == key && entry->domain_len == old_domain_len && entry->port == old_port &&
-            !memcmp(entry->domain, old_domain, old_domain_len))
+        if (entry->key == key && entry->domain_len == old_domain_len && entry->proto == old_proto &&
+            entry->port == old_port && !memcmp(entry->domain, old_domain, old_domain_len))
             break;
       }
 
@@ -242,8 +236,8 @@ RealStatTable::add_entry(RealStatEntry *entry)
   ink_spinlock_acquire(&b_locks[idx]);
 
   for (e = buckets[idx].head; e; e = e->hash_link.next) {
-    if (e->key == key && e->domain_len == entry->domain_len && e->port == entry->port &&
-        !memcmp(e->domain, entry->domain, e->domain_len))
+    if (e->key == key && e->domain_len == entry->domain_len && e->proto == entry->proto &&
+        e->port == entry->port && !memcmp(e->domain, entry->domain, e->domain_len))
       break;
   }
 
@@ -283,16 +277,14 @@ RealStatTable::add_entry(RealStatEntry *entry)
 
 
 
-
-
 static inline
 int write_entry(FILE *file, RealStatEntry *entry)
 {
   return
-    fprintf(file, "%" PRId64 " %d %.*s;out_bytes %" PRId64 ",rt %" PRId64 ",count %d,hits %" PRId64 ",memhits %d," 
+    fprintf(file, "%" PRId64 " %d %.*s %d;out_bytes %" PRId64 ",rt %" PRId64 ",count %d,hits %" PRId64 ",memhits %d," 
       "client_abort %d,1xx %d,200 %d,206 %d,2xx %d,301 %d,302 %d,304 %d,3xx %d,400 %d,403 %d,404 %d,408 %d,"
       "412 %d,416 %d,4xx %d,502 %d,503 %d,504 %d,5xx %d,others %d\n",
-      ink_get_hrtime() / 1000, node_no, entry->domain_len, entry->domain, entry->out_bytes, entry->rt, entry->count, 
+      ink_get_hrtime() / 1000, node_no, entry->domain_len, entry->domain, entry->proto, entry->out_bytes, entry->rt, entry->count, 
       entry->hits, entry->memhits, entry->client_abort, entry->http_info, entry->http_ok, entry->http_partial_ok, entry->http_successful,
       entry->http_move_permanent, entry->http_found, entry->http_not_modified, entry->http_redirection, entry->http_bad_request,
       entry->http_forbidden, entry->http_not_found, entry->http_request_timeout, entry->http_precondition_failed,
@@ -327,11 +319,19 @@ RealStatTable::write_file(FILE *file)
 
   for (int i = 0; i < MAX_BUCKETS; i++) {
     ink_spinlock_acquire(&b_locks[i]);
-    for (RealStatEntry *entry = buckets[i].head; entry; entry = entry->hash_link.next) {
-      write_entry(file, entry);
+    for (RealStatEntry *entry = buckets[i].head; entry;) {
+      RealStatEntry *p = entry;
+      entry = entry->hash_link.next;
+
+      if (p->count <= 0) {
+        buckets[i].remove(p);
+        realStatEntryAllocator.free(p);
+        continue;
+      }
+      write_entry(file, p);
       // reset the data
-      int len = (char *) &entry->domain - (char *) &entry->out_bytes;
-      memset(&entry->out_bytes, 0, len);
+      int len = (char *) &p->domain - (char *) &p->out_bytes;
+      memset(&p->out_bytes, 0, len);
     }
     ink_spinlock_release(&b_locks[i]);
   }
@@ -346,8 +346,17 @@ RealStatTable::write_buffer(MIOBuffer *buf) {
 
   for (int i = 0; i < MAX_BUCKETS; i++) {
     ink_spinlock_acquire(&b_locks[i]);
-    for (RealStatEntry *entry = buckets[i].head; entry; entry = entry->hash_link.next) {
-      sz += write_entry(buf, entry);
+    for (RealStatEntry *entry = buckets[i].head; entry;) {
+      RealStatEntry *p = entry;
+      entry = entry->hash_link.next;
+
+      if (p->count <= 0) {
+        buckets[i].remove(p);
+        realStatEntryAllocator.free(p);
+        continue;
+      }
+
+      sz += write_entry(buf, p);
     }
     ink_spinlock_release(&b_locks[i]);
   }
