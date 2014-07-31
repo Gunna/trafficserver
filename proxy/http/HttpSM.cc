@@ -147,7 +147,7 @@ update_real_stats(HttpSM *sm)
   write_bytes = sm->client_response_hdr_bytes + sm->client_response_body_bytes;
   if (sm->milestones.ua_close == 0)
     sm->milestones.ua_close = ink_get_hrtime();
-  rt = sm->milestones.ua_close - sm->milestones.ua_begin;
+  rt = (sm->milestones.ua_close - sm->milestones.ua_begin) / 1000000;
 
   switch (sm->t_state.squid_codes.log_code) {
     case SQUID_LOG_TCP_MEM_HIT:
