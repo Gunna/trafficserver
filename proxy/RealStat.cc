@@ -284,7 +284,7 @@ int write_entry(FILE *file, RealStatEntry *entry)
     fprintf(file, "%" PRId64 " %d %.*s %d;out_bytes %" PRId64 ",rt %" PRId64 ",count %d,hits %" PRId64 ",memhits %d," 
       "client_abort %d,1xx %d,200 %d,206 %d,2xx %d,301 %d,302 %d,304 %d,3xx %d,400 %d,403 %d,404 %d,408 %d,"
       "412 %d,416 %d,4xx %d,502 %d,503 %d,504 %d,5xx %d,others %d\n",
-      ink_get_hrtime() / 1000, node_no, entry->domain_len, entry->domain, entry->proto, entry->out_bytes, entry->rt, entry->count, 
+      ink_get_hrtime() / 1000, node_no, entry->domain_len, entry->domain, entry->proto, entry->out_bytes, entry->rt / 1000, entry->count, 
       entry->hits, entry->memhits, entry->client_abort, entry->http_info, entry->http_ok, entry->http_partial_ok, entry->http_successful,
       entry->http_move_permanent, entry->http_found, entry->http_not_modified, entry->http_redirection, entry->http_bad_request,
       entry->http_forbidden, entry->http_not_found, entry->http_request_timeout, entry->http_precondition_failed,
