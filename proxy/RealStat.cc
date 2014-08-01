@@ -607,7 +607,7 @@ realstat_init(const char *run_dir)
     if (!real_stat_file) {
       Warning("real stat file %s open failed!", real_snap_filename);
     } else {
-      eventProcessor.schedule_every((NEW (new RealStatSyncer)), HRTIME_SECONDS(5));
+      eventProcessor.schedule_every((NEW (new RealStatSyncer)), HRTIME_SECONDS(1));
     }
 
     real_stat_collation_accept = NEW(new RealStatCollectionAccept(realstat_port));
