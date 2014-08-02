@@ -525,7 +525,7 @@ write_to_net_io(NetHandler *nh, UnixNetVConnection *vc, EThread *thread)
       vc->fct.limit_rate / 1000 + vc->fct.limit_rate_after - s->vio.ndone;
 
     if (limit <= 0) {
-      ink_hrtime next_time = -limit * HRTIME_SECONDS(1) / vc->fct.limit_rate; 
+      ink_hrtime next_time = -limit * HRTIME_SECONDS(1) / vc->fct.limit_rate + HRTIME_MSECONDS(2);
       vc->fct.e_flowctl = vc->thread->schedule_in_local(vc, next_time);
       write_disable(nh, vc);
       return;
@@ -592,13 +592,19 @@ write_to_net_io(NetHandler *nh, UnixNetVConnection *vc, EThread *thread)
     }
     // re caculate the flow control
     if (vc->fct.limit_rate) {
-      ink_debug_assert(!vc->fct.e_flowctl);
-      if (s->vio.ndone > vc->fct.limit_rate_after) {
-        int delay = (lastdone > vc->fct.limit_rate_after) ? 
-            (r * 1000 / vc->fct.limit_rate) :
-            (s->vio.ndone - vc->fct.limit_rate_after) * 1000 / vc->fct.limit_rate;
 
-        if (delay > 50) {
+      ink_debug_assert(!vc->fct.e_flowctl);
+
+      if (s->vio.ndone > vc->fct.limit_rate_after) {
+
+        int64_t done = s->vio.ndone - vc->fct.limit_rate_after;
+        lastdone -= vc->fct.limit_rate_after;
+
+        if (lastdone < 0)
+            lastdone = 0;
+
+        int64_t delay = (done - lastdone) * 1000 / vc->fct.limit_rate;
+        if (delay > 0) {
           vc->fct.e_flowctl = vc->thread->schedule_in_local(vc, HRTIME_MSECONDS(delay));
           write_disable(nh, vc);
           return;
@@ -803,6 +809,9 @@ UnixNetVConnection::send_OOB(Continuation *cont, char *buf, int len)
 void
 UnixNetVConnection::reenable(VIO *vio)
 {
+  if (fct.e_flowctl)
+      return;
+
   if (STATE_FROM_VIO(vio)->enabled)
     return;
   set_enabled(vio);
