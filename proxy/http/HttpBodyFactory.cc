@@ -122,7 +122,7 @@ HttpBodyFactory::fabricate_with_old_api(const char *type, HttpTransact::State * 
   ///////////////////////////////////////////
   // check if we don't need to format body //
   ///////////////////////////////////////////
-  if (format) {
+  if (format && *format != '\0') {
     // The length from ink_bvsprintf includes the trailing NUL, so adjust the final
     // length accordingly.
     int l = ink_bvsprintf(NULL, format, ap);
