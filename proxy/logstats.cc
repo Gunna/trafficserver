@@ -2216,7 +2216,11 @@ open_main_log(ExitStatus& status)
   int cnt = 3;
   int main_fd;
 
-  while (((main_fd = open("./squid.blog", O_RDONLY)) < 0) && --cnt) {
+  char logfile[PATH_NAME_MAX + 1];
+  strcpy(logfile, system_log_dir);
+  strcat(logfile, "/squid.blog");
+
+  while (((main_fd = open(logfile, O_RDONLY)) < 0) && --cnt) {
     switch (errno) {
     case ENOENT:
     case EACCES:
