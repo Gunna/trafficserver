@@ -7601,7 +7601,6 @@ const char *SDK_Overridable_Configs[] = {
   "proxy.config.http.range_elimination_enabled",
   "proxy.config.http.cache.open_read_retry_time",
   "proxy.config.http.cache.max_open_read_retries",
-  "proxy.config.http.cache.max_open_write_retries",
 
   NULL
 };
