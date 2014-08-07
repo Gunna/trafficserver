@@ -60,6 +60,8 @@ asf-dist-sign: asf-dist
 	sha1sum -b $(distdir).tar.bz2 >$(distdir).tar.bz2.sha1
 	gpg --armor --output $(distdir).tar.bz2.asc  --detach-sig $(distdir).tar.bz2
 
+rpm: asf-dist
+	rpm/makerpm.sh trafficserver $(TS_VERSION_STRING) $(release)
 examples: all
 	@cd example && $(MAKE) $(AM_MAKEFLAGS)
 

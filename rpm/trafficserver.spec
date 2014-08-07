@@ -3,7 +3,7 @@
 Summary:	Fast, scalable and extensible HTTP/1.1 compliant caching proxy server
 Name:		trafficserver
 Version:	3.2.0
-Release:	4%(echo ${RELEASE:+.${RELEASE}})%{?dist}
+Release:	5%(echo ${RELEASE:+.${RELEASE}})%{?dist}
 License:	ASL 2.0
 Group:		System Environment/Daemons
 Source0:	%{name}-%{version}.tar.bz2
@@ -11,9 +11,9 @@ Source0:	%{name}-%{version}.tar.bz2
 URL:		http://trafficserver.apache.org/index.html
 # BuildRoot is only needed for EPEL5:
 #BuildRoot:	%(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
-BuildRequires:	autoconf, automake, libtool, t-openssl-devel, t-spdylay-devel, tcl-devel, expat-devel
+BuildRequires:	autoconf, automake, libtool, openssl-devel, spdylay-devel, tcl-devel, expat-devel
 BuildRequires:	pcre-devel, zlib-devel, xz-devel, gcc-c++
-Provides:	t-cdn-trafficserver, trafficserver_ssd
+#Provides:	t-cdn-trafficserver, trafficserver_ssd
 
 #Patch8:		lock.patch
 
