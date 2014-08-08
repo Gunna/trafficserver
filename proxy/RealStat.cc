@@ -518,7 +518,7 @@ RealStatClientSM::connectEvent(int event, void *data)
       net_vc = (UnixNetVConnection *) data;
       m_send_reader = m_buf.alloc_reader();
       m_abort_vio = net_vc->do_io_read(this, 1, &m_abort_buffer);
-      timer = eventProcessor.schedule_every(this, HRTIME_SECONDS(3));
+      timer = eventProcessor.schedule_every(this, HRTIME_SECONDS(1));
       m_write_vio = net_vc->do_io_write(this, INT64_MAX, m_send_reader);
       break;
     case NET_EVENT_OPEN_FAILED:
@@ -607,7 +607,7 @@ realstat_init(const char *run_dir)
     if (!real_stat_file) {
       Warning("real stat file %s open failed!", real_snap_filename);
     } else {
-      eventProcessor.schedule_every((NEW (new RealStatSyncer)), HRTIME_SECONDS(1));
+      eventProcessor.schedule_every((NEW (new RealStatSyncer)), HRTIME_SECONDS(5));
     }
 
     real_stat_collation_accept = NEW(new RealStatCollectionAccept(realstat_port));
