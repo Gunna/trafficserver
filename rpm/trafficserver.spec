@@ -42,6 +42,7 @@ useradd -r -u 176 -g ats -d / -s /sbin/nologin \
 	    --with-user=ats \
 	    --with-group=ats \
 	    --enable-reclaimable-freelist \
+      --enable-shm \
 	    --enable-spdy \
 	    --with-openssl
 make %{?_smp_mflags}
