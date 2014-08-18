@@ -754,7 +754,7 @@ SSLParseCertificateConfiguration(
   char errBuf[1024];
 
   const matcher_tags sslCertTags = {
-    NULL, NULL, NULL, NULL, NULL, false
+    NULL, NULL, NULL, NULL, NULL, NULL, false
   };
 
   Note("loading SSL certificate configuration from %s", params->configFilePath);
