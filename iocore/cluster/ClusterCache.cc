@@ -2812,7 +2812,7 @@ cache_op_result_ClusterFunction(ClusterSession cs, void *context, void *d)
 
   CacheHTTPInfo ci;
   CacheOpReplyMsg *msg = (CacheOpReplyMsg *) data;
-  int32_t op_result_error = 0;
+  int64_t op_result_error = 0;
   ClusterMessageHeader *mh = (ClusterMessageHeader *) data;
 
   if (mh->GetMsgVersion() != CacheOpReplyMsg::CACHE_OP_REPLY_MESSAGE_VERSION) { ////////////////////////////////////////////////
