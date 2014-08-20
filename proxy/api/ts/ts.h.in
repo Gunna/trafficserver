@@ -3403,6 +3403,10 @@ extern "C"
 
   tsapi TSReturnCode TSHttpTxnClientRespFlowCtrlSet(TSHttpTxn txnp, int64_t rate, int64_t after);
 
+  tsapi void * TSAllocatorCreate(const char *name, uint32_t element_size);
+  tsapi void * TSAllocatorNewObj(void *allocator);
+  tsapi void TSAllocatorFreeObj(void *allocator, void *ptr);
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
