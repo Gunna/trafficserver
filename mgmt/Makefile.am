@@ -68,7 +68,6 @@ libmgmt_p_a_SOURCES = \
   RecordsConfig.h
 
 traffic_manager_SOURCES = \
-  $(top_srcdir)/proxy/Error.cc \
   AddConfigFilesHere.cc \
   Alarms.cc \
   Alarms.h \
@@ -100,6 +99,9 @@ traffic_manager_LDADD = \
   $(top_builddir)/mgmt/tools/libinksysapi.a \
   $(top_builddir)/mgmt/tools/libinkconfigapi.a \
   $(top_builddir)/lib/ts/libtsutil.la \
+  $(top_srcdir)/proxy/Error.o \
+  $(top_srcdir)/lib/ts/MatcherUtils.o \
+  $(top_srcdir)/proxy/DiagsConfig.o \
   @LIBEXPAT@ @LIBPCRE@ \
   @LIBTCL@ @LIBICONV@ \
   -lm @LIBDL@ @LIBSOCKET@ @LIBNSL@ @LIBRESOLV@ \
