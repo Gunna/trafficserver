@@ -626,7 +626,7 @@ HttpTransact::BadRequest(State* s)
 {
   DebugTxn("http_trans", "[BadRequest]" "parser marked request bad");
   bootstrap_state_variables_from_request(s, &s->hdr_info.client_request);
-  build_error_response(s, HTTP_STATUS_BAD_REQUEST, "Invalid HTTP Request", "request#syntax_error", "Bad request syntax", "");
+  build_error_response(s, HTTP_STATUS_BAD_REQUEST, "Invalid HTTP Request", "request#syntax_error", "Bad request syntax");
   TRANSACT_RETURN(PROXY_SEND_ERROR_CACHE_NOOP, NULL);
 }
 
@@ -689,7 +689,7 @@ HttpTransact::HandleBlindTunnel(State* s)
     // The error message we send back will be suppressed so
     //  the only important thing in selecting the error is what
     //  status code it gets logged as
-    build_error_response(s, HTTP_STATUS_INTERNAL_SERVER_ERROR, "Port Forwarding Error", "default", "");
+    build_error_response(s, HTTP_STATUS_INTERNAL_SERVER_ERROR, "Port Forwarding Error", "default", NULL);
 
     int host_len;
     const char *host = s->hdr_info.client_request.url_get()->host_get(&host_len);
@@ -879,7 +879,7 @@ HttpTransact::EndRemapRequest(State* s)
   /////////////////////////////////////////////////////////////////////////////////////////
 
   if (s->server_busy) {
-    build_error_response(s, HTTP_STATUS_INTERNAL_SERVER_ERROR, "Server is too busy", "default", "");
+    build_error_response(s, HTTP_STATUS_INTERNAL_SERVER_ERROR, "Server is too busy", "default", NULL);
     s->reverse_proxy = false;
     HTTP_INCREMENT_TRANS_STAT(http_total_transaction_drop_stat);
     goto done;
@@ -1734,7 +1734,7 @@ HttpTransact::OSDNSLookup(State* s)
         TRANSACT_RETURN(HttpTransact::HTTP_API_OS_DNS, HandleCacheOpenReadMiss);
         //DNS lookup is done if the lookup failed and need to call Handle Cache Open Read Miss
       } else {
-        build_error_response(s, HTTP_STATUS_INTERNAL_SERVER_ERROR, "Invalid Cache Lookup result", "default", "");
+        build_error_response(s, HTTP_STATUS_INTERNAL_SERVER_ERROR, "Invalid Cache Lookup result", "default", NULL);
         Log::error("HTTP: Invalid CACHE LOOKUP RESULT : %d", s->cache_lookup_result);
         TRANSACT_RETURN(PROXY_SEND_ERROR_CACHE_NOOP, NULL);
       }
@@ -1751,7 +1751,7 @@ HttpTransact::StartAccessControl(State* s)
     HandleRequestAuthorized(s);
     if (s->current.mode == TUNNELLING_PROXY) {
       if (is_os_connection_exceed(s)) {
-        build_error_response(s, HTTP_STATUS_INTERNAL_SERVER_ERROR, "Server busy", "default", "");
+        build_error_response(s, HTTP_STATUS_INTERNAL_SERVER_ERROR, "Server busy", "default", NULL);
         TRANSACT_RETURN(PROXY_OS_CONNECTIONS_LIMITS_EXCEED, NULL);
       }
     }
@@ -2143,7 +2143,7 @@ HttpTransact::HandleCacheOpenRead(State* s)
     SET_VIA_STRING(VIA_DETAIL_CACHE_LOOKUP, VIA_DETAIL_MISS_NOT_CACHED);
     if (is_os_connection_exceed(s)) {
       build_error_response(s, HTTP_STATUS_INTERNAL_SERVER_ERROR,
-          "Server busy", "default", "");
+          "Server busy", "default", NULL);
       TRANSACT_RETURN(PROXY_OS_CONNECTIONS_LIMITS_EXCEED, NULL);
     }
     //StartAccessControl(s);
@@ -2367,7 +2367,7 @@ HttpTransact::HandleCacheOpenReadHitFreshness(State* s)
     if (need_to_revalidate(s)) {
       if (is_os_connection_exceed(s)) {
         build_error_response(s, HTTP_STATUS_INTERNAL_SERVER_ERROR,
-            "Server busy", "default", "");
+            "Server busy", "default", NULL);
         TRANSACT_RETURN(PROXY_OS_CONNECTIONS_LIMITS_EXCEED, NULL);
       } else
         TRANSACT_RETURN(HTTP_API_CACHE_LOOKUP_COMPLETE, CallOSDNSLookup); // content needs to be revalidated and we did not perform a dns ....calling DNS lookup
@@ -2629,7 +2629,7 @@ HttpTransact::HandleCacheOpenReadHit(State* s)
     if (server_up || s->stale_icp_lookup) {
       if (is_os_connection_exceed(s)) {
         build_error_response(s, HTTP_STATUS_INTERNAL_SERVER_ERROR,
-          "Server busy", "default", "");
+          "Server busy", "default", NULL);
         s->cache_info.action = CACHE_DO_NO_ACTION;
         TRANSACT_RETURN(PROXY_OS_CONNECTIONS_LIMITS_EXCEED, NULL);
       }
@@ -2802,14 +2802,14 @@ HttpTransact::build_response_from_cache(State* s, HTTPWarningCode warning_code)
       if (client_response_code == HTTP_STATUS_OK && client_request->presence(MIME_PRESENCE_RANGE)) {
         s->state_machine->do_range_setup_if_necessary();
         if (s->range_setup == RANGE_NOT_SATISFIABLE) {
-          build_error_response(s, HTTP_STATUS_RANGE_NOT_SATISFIABLE, "Requested Range Not Satisfiable","","");
+          build_error_response(s, HTTP_STATUS_RANGE_NOT_SATISFIABLE, "Requested Range Not Satisfiable","",NULL);
           s->cache_info.action = CACHE_DO_NO_ACTION;
           s->next_action = PROXY_INTERNAL_CACHE_NOOP;
           break;
         } else if (s->range_setup == RANGE_NOT_HANDLED &&
             warning_code != HTTP_WARNING_CODE_REVALIDATION_FAILED) {
           if (is_os_connection_exceed(s)) {
-            build_error_response(s, HTTP_STATUS_INTERNAL_SERVER_ERROR, "Server busy", "default", "");
+            build_error_response(s, HTTP_STATUS_INTERNAL_SERVER_ERROR, "Server busy", "default", NULL);
             s->cache_info.action = CACHE_DO_NO_ACTION;
             s->next_action = PROXY_OS_CONNECTIONS_LIMITS_EXCEED;
             break;
@@ -4321,7 +4321,7 @@ HttpTransact::handle_cache_operation_on_forward_server_response(State* s)
 
     /* Downgrade the request level and retry */
     if (!HttpTransactHeaders::downgrade_request(&keep_alive, &s->hdr_info.server_request)) {
-      build_error_response(s, HTTP_STATUS_HTTPVER_NOT_SUPPORTED, "HTTP Version Not Supported", "response#bad_version", "");
+      build_error_response(s, HTTP_STATUS_HTTPVER_NOT_SUPPORTED, "HTTP Version Not Supported", "response#bad_version", NULL);
       s->next_action = PROXY_SEND_ERROR_CACHE_NOOP;
       s->already_downgraded = true;
     } else {
@@ -4708,7 +4708,7 @@ HttpTransact::handle_no_cache_operation_on_forward_server_response(State* s)
     /* Downgrade the request level and retry */
     if (!HttpTransactHeaders::downgrade_request(&keep_alive, &s->hdr_info.server_request)) {
       s->already_downgraded = true;
-      build_error_response(s, HTTP_STATUS_HTTPVER_NOT_SUPPORTED, "HTTP Version Not Supported", "response#bad_version", "");
+      build_error_response(s, HTTP_STATUS_HTTPVER_NOT_SUPPORTED, "HTTP Version Not Supported", "response#bad_version", NULL);
       s->next_action = PROXY_SEND_ERROR_CACHE_NOOP;
     } else {
       s->already_downgraded = true;
@@ -6575,7 +6575,7 @@ HttpTransact::is_request_valid(State* s, HTTPHdr* incoming_request)
     DebugTxn("http_trans", "[is_request_valid]" "failed proxy authorization");
     SET_VIA_STRING(VIA_DETAIL_TUNNEL, VIA_DETAIL_TUNNEL_NO_FORWARD);
     build_error_response(s, HTTP_STATUS_PROXY_AUTHENTICATION_REQUIRED, "Proxy Authentication Required",
-                         "access#proxy_auth_required", "");
+                         "access#proxy_auth_required", NULL);
     return FALSE;
   case NON_EXISTANT_REQUEST_HEADER:
     /* fall through */
@@ -8025,7 +8025,7 @@ HttpTransact::handle_server_died(State* s)
     body_type = "connect#failed_connect";
   }
 
-  build_error_response(s, status, reason, body_type, reason);
+  build_error_response(s, status, reason, body_type, NULL);
 
   return;
 }
