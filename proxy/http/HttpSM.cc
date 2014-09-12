@@ -133,10 +133,9 @@ update_real_stats(HttpSM *sm)
   int hit, ret_code, proto;
   bool remap_failed;
 
-  HTTPHdr *client_request = &sm->t_state.hdr_info.client_request;
-  if (t_state.pristine_url.valid()) {
-    host = t_state.pristine_url.host_get(&host_len);
-    port = t_state.pristine_url.port_get();
+  if (sm->t_state.pristine_url.valid()) {
+    host = sm->t_state.pristine_url.host_get(&host_len);
+    port = sm->t_state.pristine_url.port_get();
   } else {
     host = NULL;
     host_len = 0;
