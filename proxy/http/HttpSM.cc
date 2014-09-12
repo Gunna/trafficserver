@@ -134,9 +134,9 @@ update_real_stats(HttpSM *sm)
   bool remap_failed;
 
   HTTPHdr *client_request = &sm->t_state.hdr_info.client_request;
-  if (client_request->valid()) {
-    host = client_request->host_get(&host_len);
-    port = client_request->m_port;
+  if (t_state.pristine_url.valid()) {
+    host = t_state.pristine_url.host_get(&host_len);
+    port = t_state.pristine_url.port_get();
   } else {
     host = NULL;
     host_len = 0;
