@@ -1124,7 +1124,7 @@ UnixNetVConnection::mainEvent(int event, Event *e)
       (read.vio.mutex.m_ptr && rlock.m.m_ptr != read.vio.mutex.m_ptr) ||
       (write.vio.mutex.m_ptr && wlock.m.m_ptr != write.vio.mutex.m_ptr)) {
 #ifndef INACTIVITY_TIMEOUT
-    if (e == active_timeout)
+    if (e == active_timeout || e == fct.e_flowctl)
 #endif
       e->schedule_in(NET_RETRY_DELAY);
     return EVENT_CONT;
