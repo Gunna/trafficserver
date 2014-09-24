@@ -10,12 +10,12 @@ int node_no;
 char real_snap_filename[PATH_NAME_MAX + 1];
 
 static const char unknown_domain[] = "unkown_domain";
-static ClassAllocator<RealStatEntry> realStatEntryAllocator("RealStatEntryAllocator");
+static ClassAllocator<RealStatEntry> realStatEntryAllocator(
+    "RealStatEntryAllocator");
 FILE *real_stat_file = NULL;
 
 static inline
-unsigned int makeHash(const char *string, int len)
-{
+unsigned int makeHash(const char *string, int len) {
   if (!string || len <= 0 || *string == 0)
     return 0;
 
@@ -24,7 +24,7 @@ unsigned int makeHash(const char *string, int len)
 
   uint64_t hash = InitialFNV;
   uint32_t *p = (uint32_t *) &hash;
-  while(len > 0) {
+  while (len > 0) {
     p[0] = p[0] ^ (toupper(*string));
     hash = (p[1] ^ p[0]) * FNVMultiple;
     ++string;
@@ -34,22 +34,29 @@ unsigned int makeHash(const char *string, int len)
   return (p[1] ^ p[0]);
 }
 
-struct RealStatSyncer : public Continuation
-{
+struct RealStatSyncer: public Continuation {
   int mainEvent(int event, void *data) {
-    rst.write_file(real_stat_file);
+    if (data == (void *) truncate_event) {
+      fclose(real_stat_file);
+      real_stat_file = fopen(real_snap_filename, "w");
+      if (!real_stat_file)
+        Warning("truncate stat file %s failed!", real_snap_filename);
+    } else if (real_stat_file)
+      rst.write_file(real_stat_file);
     return EVENT_CONT;
   }
 
-  RealStatSyncer() : Continuation(new_ProxyMutex())
-  {
+  RealStatSyncer() :
+      Continuation(new_ProxyMutex()) {
     SET_HANDLER(&RealStatSyncer::mainEvent);
+    truncate_event = eventProcessor.schedule_every(this, HRTIME_SECONDS(300));
   }
+
+  Event * truncate_event;
 };
 
 static inline
-void set_http_code(RealStatEntry *entry, int ret_code)
-{
+void set_http_code(RealStatEntry *entry, int ret_code) {
   if (ret_code == 0) {
     entry->client_abort++;
     return;
@@ -137,10 +144,9 @@ void set_http_code(RealStatEntry *entry, int ret_code)
   }
 }
 
-void
-RealStatTable::add_one(int proto, const char *host, int host_len, int64_t s,
-    int64_t rt, int hit, int ret_code, bool remap_failed, short port)
-{
+void RealStatTable::add_one(int proto, const char *host, int host_len,
+    int64_t s, int64_t rt, int hit, int ret_code, bool remap_failed,
+    short port) {
   const char *domain;
   int domain_len;
   int old_proto = proto;
@@ -171,9 +177,10 @@ RealStatTable::add_one(int proto, const char *host, int host_len, int64_t s,
   ink_spinlock_acquire(&b_locks[idx]);
 
   for (entry = buckets[idx].head; entry; entry = entry->hash_link.next) {
-    if (entry->key == key && entry->domain_len == domain_len && entry->proto == proto &&
-        entry->port == (short) port && !memcmp(entry->domain, domain, domain_len))
-        break;
+    if (entry->key == key && entry->domain_len == domain_len
+        && entry->proto == proto && entry->port == (short) port
+        && !memcmp(entry->domain, domain, domain_len))
+      break;
   }
 
   if (!entry) {
@@ -201,7 +208,6 @@ RealStatTable::add_one(int proto, const char *host, int host_len, int64_t s,
 
   ink_spinlock_release(&b_locks[idx]);
 
-
   if (remap_failed) {
     if (old_domain != unknown_domain && old_domain_len > 0) {
       key = makeHash(old_domain, old_domain_len);
@@ -210,9 +216,10 @@ RealStatTable::add_one(int proto, const char *host, int host_len, int64_t s,
       ink_spinlock_acquire(&b_locks[idx]);
 
       for (entry = buckets[idx].head; entry; entry = entry->hash_link.next) {
-        if (entry->key == key && entry->domain_len == old_domain_len && entry->proto == old_proto &&
-            entry->port == old_port && !memcmp(entry->domain, old_domain, old_domain_len))
-            break;
+        if (entry->key == key && entry->domain_len == old_domain_len
+            && entry->proto == old_proto && entry->port == old_port
+            && !memcmp(entry->domain, old_domain, old_domain_len))
+          break;
       }
 
       if (entry) {
@@ -225,9 +232,7 @@ RealStatTable::add_one(int proto, const char *host, int host_len, int64_t s,
   }
 }
 
-void
-RealStatTable::add_entry(RealStatEntry *entry)
-{
+void RealStatTable::add_entry(RealStatEntry *entry) {
   RealStatEntry *e;
   uint32_t key = entry->key;
   int idx = key % MAX_BUCKETS;
@@ -236,8 +241,9 @@ RealStatTable::add_entry(RealStatEntry *entry)
   ink_spinlock_acquire(&b_locks[idx]);
 
   for (e = buckets[idx].head; e; e = e->hash_link.next) {
-    if (e->key == key && e->domain_len == entry->domain_len && e->proto == entry->proto &&
-        e->port == entry->port && !memcmp(e->domain, entry->domain, e->domain_len))
+    if (e->key == key && e->domain_len == entry->domain_len
+        && e->proto == entry->proto && e->port == entry->port
+        && !memcmp(e->domain, entry->domain, e->domain_len))
       break;
   }
 
@@ -275,47 +281,47 @@ RealStatTable::add_entry(RealStatEntry *entry)
   ink_spinlock_release(&b_locks[idx]);
 }
 
-
-
 static inline
-int write_entry(FILE *file, RealStatEntry *entry)
-{
-  return
-    fprintf(file, "%" PRId64 " %d %.*s %d;out_bytes %" PRId64 ",rt %" PRId64 ",count %d,hits %" PRId64 ",memhits %d," 
+int write_entry(FILE *file, RealStatEntry *entry) {
+  return fprintf(file,
+      "%" PRId64 " %d %.*s %d;out_bytes %" PRId64 ",rt %" PRId64 ",count %d,hits %" PRId64 ",memhits %d,"
       "client_abort %d,1xx %d,200 %d,206 %d,2xx %d,301 %d,302 %d,304 %d,3xx %d,400 %d,403 %d,404 %d,408 %d,"
       "412 %d,416 %d,4xx %d,502 %d,503 %d,504 %d,5xx %d,others %d\n",
-      ink_get_hrtime() / 1000, node_no, entry->domain_len, entry->domain, entry->proto, entry->out_bytes, entry->rt / 1000, entry->count, 
-      entry->hits, entry->memhits, entry->client_abort, entry->http_info, entry->http_ok, entry->http_partial_ok, entry->http_successful,
-      entry->http_move_permanent, entry->http_found, entry->http_not_modified, entry->http_redirection, entry->http_bad_request,
-      entry->http_forbidden, entry->http_not_found, entry->http_request_timeout, entry->http_precondition_failed,
-      entry->http_range_not_statisfiable, entry->http_client_error, entry->http_bad_gateway,
-      entry->http_service_unavailable, entry->http_gateway_timeout, entry->http_server_error, entry->http_others);
+      ink_get_hrtime() / 1000, node_no, entry->domain_len, entry->domain,
+      entry->proto, entry->out_bytes, entry->rt / 1000, entry->count,
+      entry->hits, entry->memhits, entry->client_abort, entry->http_info,
+      entry->http_ok, entry->http_partial_ok, entry->http_successful,
+      entry->http_move_permanent, entry->http_found, entry->http_not_modified,
+      entry->http_redirection, entry->http_bad_request, entry->http_forbidden,
+      entry->http_not_found, entry->http_request_timeout,
+      entry->http_precondition_failed, entry->http_range_not_statisfiable,
+      entry->http_client_error, entry->http_bad_gateway,
+      entry->http_service_unavailable, entry->http_gateway_timeout,
+      entry->http_server_error, entry->http_others);
 }
 
 static inline
-int write_entry(MIOBuffer *buf, RealStatEntry *entry)
-{
+int write_entry(MIOBuffer *buf, RealStatEntry *entry) {
   RealStatHdr hdr;
   hdr.magic = 0xabcd1234;
-  hdr.length = (char *) &entry->domain - (char *) &entry->key + entry->domain_len;
+  hdr.length = (char *) &entry->domain - (char *) &entry->key
+      + entry->domain_len;
   buf->write(&hdr, sizeof hdr);
   buf->write(&entry->key, hdr.length);
 
-  memset(&entry->out_bytes, 0, (char *) &entry->domain - (char *) &entry->out_bytes);
+  memset(&entry->out_bytes, 0,
+      (char *) &entry->domain - (char *) &entry->out_bytes);
   return hdr.length + sizeof hdr;
 }
 
-void
-RealStatTable::init()
-{
+void RealStatTable::init() {
   for (int i = 0; i < MAX_BUCKETS; ++i)
     ink_spinlock_init(&b_locks[i]);
 }
 
-void
-RealStatTable::write_file(FILE *file)
-{
-  if (!file) return;
+void RealStatTable::write_file(FILE *file) {
+  if (!file)
+    return;
 
   for (int i = 0; i < MAX_BUCKETS; i++) {
     ink_spinlock_acquire(&b_locks[i]);
@@ -339,8 +345,7 @@ RealStatTable::write_file(FILE *file)
   fflush(file);
 }
 
-int
-RealStatTable::write_buffer(MIOBuffer *buf) {
+int RealStatTable::write_buffer(MIOBuffer *buf) {
   ink_assert(buf);
   int sz = 0;
 
@@ -364,8 +369,7 @@ RealStatTable::write_buffer(MIOBuffer *buf) {
 }
 
 RealStatCollectionAccept::RealStatCollectionAccept(int port) :
-  Continuation(new_ProxyMutex()), m_port(port), m_accept_action(NULL)
-{
+    Continuation(new_ProxyMutex()), m_port(port), m_accept_action(NULL) {
   NetProcessor::AcceptOptions opt;
   SET_HANDLER(&RealStatCollectionAccept::accept_event);
 
@@ -376,9 +380,7 @@ RealStatCollectionAccept::RealStatCollectionAccept(int port) :
   ink_assert(NULL != m_accept_action);
 }
 
-int
-RealStatCollectionAccept::accept_event(int event, NetVConnection * net_vc)
-{
+int RealStatCollectionAccept::accept_event(int event, NetVConnection * net_vc) {
   RealStatCollectionSM *sm;
 
   switch (event) {
@@ -389,11 +391,10 @@ RealStatCollectionAccept::accept_event(int event, NetVConnection * net_vc)
       ink_assert(!"[ERROR] Unexpected Event");
   }
 
-  return EVENT_CONT; 
+  return EVENT_CONT;
 }
 
-RealStatCollectionAccept::~RealStatCollectionAccept()
-{
+RealStatCollectionAccept::~RealStatCollectionAccept() {
   if (m_accept_action) {
     m_accept_action->cancel();
     m_accept_action = NULL;
@@ -401,9 +402,9 @@ RealStatCollectionAccept::~RealStatCollectionAccept()
 }
 
 RealStatCollectionSM::RealStatCollectionSM(NetVConnection *netvc) :
-  Continuation(netvc->mutex), m_net_vc(netvc), m_read_vio(NULL), m_client_reader(NULL),
-  m_read_bytes_wanted(0), m_read_bytes_received(0), p(NULL), rs(UNDEFINED)
-{
+    Continuation(netvc->mutex), m_net_vc(netvc), m_read_vio(NULL), m_client_reader(
+    NULL), m_read_bytes_wanted(0), m_read_bytes_received(0), p(NULL), rs(
+        UNDEFINED) {
   m_client_ip = netvc->get_remote_ip();
   m_client_port = netvc->get_remote_port();
   m_client_buffer.set_size_index((1 << 15));
@@ -413,24 +414,21 @@ RealStatCollectionSM::RealStatCollectionSM(NetVConnection *netvc) :
 }
 
 static inline
-void free_RealStatCollectionSM(RealStatCollectionSM *sm)
-{
+void free_RealStatCollectionSM(RealStatCollectionSM *sm) {
   sm->m_net_vc->do_io_close();
   sm->m_read_vio = NULL;
   sm->m_client_buffer.clear();
-  
+
   if (sm->entry) {
     realStatEntryAllocator.free(sm->entry);
     sm->entry = NULL;
   }
   sm->mutex.clear();
 
-  delete(sm);
+  delete (sm);
 }
 
-int
-RealStatCollectionSM::main_handler(int event, void *e)
-{
+int RealStatCollectionSM::main_handler(int event, void *e) {
   int64_t n_avail;
 
   switch (event) {
@@ -443,7 +441,7 @@ RealStatCollectionSM::main_handler(int event, void *e)
       m_read_vio = m_net_vc->do_io_read(this, INT64_MAX, &m_client_buffer);
       break;
     case VC_EVENT_READ_READY:
-      n_avail = m_client_reader->read_avail(); 
+      n_avail = m_client_reader->read_avail();
       while (n_avail > 0) {
         n_avail -= m_read_bytes_wanted;
         if (n_avail >= 0) {
@@ -476,23 +474,21 @@ RealStatCollectionSM::main_handler(int event, void *e)
     case VC_EVENT_ERROR:
     default:
       free_RealStatCollectionSM(this);
-    return EVENT_DONE;
+      return EVENT_DONE;
   }
 
   return EVENT_CONT;
 }
 
 RealStatClientSM::RealStatClientSM() :
-  Continuation(new_ProxyMutex()), pending_action(NULL), timer(NULL), net_vc(NULL), config_changed(false)
-{
+    Continuation(new_ProxyMutex()), pending_action(NULL), timer(NULL), net_vc(
+    NULL), config_changed(false) {
   m_abort_buffer.set_size_index(1);
   m_buf.set_size_index((1 << 15));
   SET_HANDLER(&RealStatClientSM::startEvent);
 }
 
-int
-RealStatClientSM::startEvent(int event, void *data)
-{
+int RealStatClientSM::startEvent(int event, void *data) {
   IpEndpoint target;
   target.assign(realstat_ip, htons(realstat_port));
   SET_HANDLER(&RealStatClientSM::connectEvent);
@@ -507,9 +503,7 @@ RealStatClientSM::startEvent(int event, void *data)
   return EVENT_CONT;
 }
 
-int
-RealStatClientSM::connectEvent(int event, void *data)
-{
+int RealStatClientSM::connectEvent(int event, void *data) {
   pending_action = NULL;
 
   switch (event) {
@@ -532,9 +526,7 @@ RealStatClientSM::connectEvent(int event, void *data)
   return EVENT_CONT;
 }
 
-int
-RealStatClientSM::mainEvent(int event, void *data)
-{
+int RealStatClientSM::mainEvent(int event, void *data) {
   switch (event) {
     case EVENT_IMMEDIATE:
       break;
@@ -548,7 +540,7 @@ RealStatClientSM::mainEvent(int event, void *data)
     case VC_EVENT_EOS:
     case VC_EVENT_ERROR:
     default:
-      net_vc->do_io_close(); 
+      net_vc->do_io_close();
       m_write_vio = NULL;
       m_abort_vio = NULL;
       if (timer) {
@@ -564,9 +556,7 @@ RealStatClientSM::mainEvent(int event, void *data)
   return EVENT_CONT;
 }
 
-int
-RealStatClientSM::write_data()
-{
+int RealStatClientSM::write_data() {
   ink_assert(net_vc);
 
   int sz = rst.write_buffer(&m_buf);
@@ -575,22 +565,22 @@ RealStatClientSM::write_data()
 
   return sz;
 }
-  
-void
-realstat_init(const char *run_dir)
-{
-  IOCORE_EstablishStaticConfigInt32(realstat_mode, "proxy.local.log.real_collation_mode");
-  
+
+void realstat_init(const char *run_dir) {
+  IOCORE_EstablishStaticConfigInt32(realstat_mode, "proxy.local.log.real_collation_mode")
+  ;
+
   char *p = real_snap_filename;
   int len = strlen(run_dir);
   memcpy(p, run_dir, len);
   p += len;
   if (*(p - 1) != '/')
     *p++ = '/';
-    
+
   IOCORE_ReadConfigString(p, "proxy.config.stats.real_snap_file", PATH_NAME_MAX);
 
-  IOCORE_EstablishStaticConfigInt32(realstat_port, "proxy.config.log.real_collation_port");
+  IOCORE_EstablishStaticConfigInt32(realstat_port, "proxy.config.log.real_collation_port")
+  ;
 
   char *hostname = REC_ConfigReadString("proxy.config.log.real_collation_host");
 
@@ -603,14 +593,16 @@ realstat_init(const char *run_dir)
   if (realstat_mode == 1)
     eventProcessor.schedule_imm(NEW(new RealStatClientSM));
   else if (realstat_mode == 2) {
-    real_stat_file = fopen(real_snap_filename, "a");
+    real_stat_file = fopen(real_snap_filename, "w");
     if (!real_stat_file) {
       Warning("real stat file %s open failed!", real_snap_filename);
     } else {
-      eventProcessor.schedule_every((NEW (new RealStatSyncer)), HRTIME_SECONDS(5));
+      eventProcessor.schedule_every((NEW(new RealStatSyncer)),
+          HRTIME_SECONDS(5));
     }
 
-    real_stat_collation_accept = NEW(new RealStatCollectionAccept(realstat_port));
+    real_stat_collation_accept = NEW(
+        new RealStatCollectionAccept(realstat_port));
   }
 }
 
