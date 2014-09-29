@@ -172,6 +172,8 @@ update_real_stats(HttpSM *sm)
     ret_code = 0; // means client abort
 
   remap_failed = !sm->t_state.url_remap_success;
+  if (!sm->t_state.reverse_proxy)
+    remap_failed = true;
 
   rst.add_one(proto, host, host_len, write_bytes, rt, hit, ret_code, remap_failed, port);
 }

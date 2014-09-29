@@ -12,7 +12,7 @@
 .*.sw*
 
 .deps
-
+.settings/
 .dirstamp
 
 .project
