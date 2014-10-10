@@ -567,8 +567,7 @@ int RealStatClientSM::write_data() {
 }
 
 void realstat_init(const char *run_dir) {
-  IOCORE_EstablishStaticConfigInt32(realstat_mode, "proxy.local.log.real_collation_mode")
-  ;
+  IOCORE_EstablishStaticConfigInt32(realstat_mode, "proxy.local.log.real_collation_mode");
 
   char *p = real_snap_filename;
   int len = strlen(run_dir);
@@ -579,17 +578,15 @@ void realstat_init(const char *run_dir) {
 
   IOCORE_ReadConfigString(p, "proxy.config.stats.real_snap_file", PATH_NAME_MAX);
 
-  IOCORE_EstablishStaticConfigInt32(realstat_port, "proxy.config.log.real_collation_port")
-  ;
+  IOCORE_EstablishStaticConfigInt32(realstat_port, "proxy.config.log.real_collation_port");
 
   char *hostname = REC_ConfigReadString("proxy.config.log.real_collation_host");
-
-  char *proxyname = REC_ConfigReadString("proxy.config.proxy_name");
-  node_no = atoi(proxyname);
-
-  rst.init();
   if (hostname)
     realstat_ip.load(hostname);
+
+  IOCORE_EstablishStaticConfigInt32(node_no, "proxy.config.log.real_collation_node");
+
+  rst.init();
   if (realstat_mode == 1)
     eventProcessor.schedule_imm(NEW(new RealStatClientSM));
   else if (realstat_mode == 2) {

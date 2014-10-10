@@ -1277,6 +1277,8 @@ RecordElement RecordsConfig[] = {
   ,
   {RECT_CONFIG, "proxy.config.log.real_collation_port", RECD_INT, "8100", RECU_DYNAMIC, RR_REQUIRED, RECC_INT, "[0-65535]", RECA_NULL}
   ,
+  {RECT_CONFIG, "proxy.config.log.real_collation_node", RECD_INT, "0", RECU_DYNAMIC, RR_NULL, RECC_NULL, NULL, RECA_NULL}
+  ,
   {RECT_CONFIG, "proxy.config.log.collation_secret", RECD_STRING, "foobar", RECU_DYNAMIC, RR_NULL, RECC_STR, ".*", RECA_NULL}
   ,
   {RECT_CONFIG, "proxy.config.log.collation_host_tagged", RECD_INT, "0", RECU_DYNAMIC, RR_NULL, RECC_INT, "[0-1]", RECA_NULL}
