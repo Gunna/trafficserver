@@ -6,7 +6,6 @@ IpAddr realstat_ip;
 RealStatCollectionAccept *real_stat_collation_accept = NULL;
 int realstat_port;
 int realstat_mode;
-int node_no;
 char real_snap_filename[PATH_NAME_MAX + 1];
 
 static const char unknown_domain[] = "unkown_domain";
@@ -146,11 +145,10 @@ void set_http_code(RealStatEntry *entry, int ret_code) {
 
 void RealStatTable::add_one(int proto, const char *host, int host_len,
     int64_t s, int64_t rt, int hit, int ret_code, bool remap_failed,
-    short port) {
+    int node) {
   const char *domain;
   int domain_len;
   int old_proto = proto;
-  short old_port = port;
 
   if (!host || host_len <= 0) {
     domain = unknown_domain;
@@ -178,7 +176,7 @@ void RealStatTable::add_one(int proto, const char *host, int host_len,
 
   for (entry = buckets[idx].head; entry; entry = entry->hash_link.next) {
     if (entry->key == key && entry->domain_len == domain_len
-        && entry->proto == proto && entry->port == (short) port
+        && entry->proto == proto && entry->node ==  node
         && !memcmp(entry->domain, domain, domain_len))
       break;
   }
@@ -187,7 +185,7 @@ void RealStatTable::add_one(int proto, const char *host, int host_len,
     entry = realStatEntryAllocator.alloc();
     entry->key = key;
     entry->proto = proto;
-    entry->port = port;
+    entry->node = node;
     entry->domain_len = (int16_t) domain_len;
     memcpy(entry->domain, domain, domain_len);
 
@@ -217,7 +215,7 @@ void RealStatTable::add_one(int proto, const char *host, int host_len,
 
       for (entry = buckets[idx].head; entry; entry = entry->hash_link.next) {
         if (entry->key == key && entry->domain_len == old_domain_len
-            && entry->proto == old_proto && entry->port == old_port
+            && entry->proto == old_proto && entry->node == node
             && !memcmp(entry->domain, old_domain, old_domain_len))
           break;
       }
@@ -242,7 +240,7 @@ void RealStatTable::add_entry(RealStatEntry *entry) {
 
   for (e = buckets[idx].head; e; e = e->hash_link.next) {
     if (e->key == key && e->domain_len == entry->domain_len
-        && e->proto == entry->proto && e->port == entry->port
+        && e->proto == entry->proto && e->node == entry->node
         && !memcmp(e->domain, entry->domain, e->domain_len))
       break;
   }
@@ -287,7 +285,7 @@ int write_entry(FILE *file, RealStatEntry *entry) {
       "%" PRId64 " %d %.*s %d;out_bytes %" PRId64 ",rt %" PRId64 ",count %d,hits %" PRId64 ",memhits %d,"
       "client_abort %d,1xx %d,200 %d,206 %d,2xx %d,301 %d,302 %d,304 %d,3xx %d,400 %d,403 %d,404 %d,408 %d,"
       "412 %d,416 %d,4xx %d,502 %d,503 %d,504 %d,5xx %d,others %d\n",
-      ink_get_hrtime() / 1000, node_no, entry->domain_len, entry->domain,
+      ink_get_hrtime() / 1000, entry->node, entry->domain_len, entry->domain,
       entry->proto, entry->out_bytes, entry->rt / 1000, entry->count,
       entry->hits, entry->memhits, entry->client_abort, entry->http_info,
       entry->http_ok, entry->http_partial_ok, entry->http_successful,
@@ -583,8 +581,6 @@ void realstat_init(const char *run_dir) {
   char *hostname = REC_ConfigReadString("proxy.config.log.real_collation_host");
   if (hostname)
     realstat_ip.load(hostname);
-
-  IOCORE_EstablishStaticConfigInt32(node_no, "proxy.config.log.real_collation_node");
 
   rst.init();
   if (realstat_mode == 1)

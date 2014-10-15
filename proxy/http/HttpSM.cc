@@ -127,22 +127,21 @@ milestone_difference_msec(const ink_hrtime start, const ink_hrtime end)
 static void
 update_real_stats(HttpSM *sm)
 {
-  if (!sm->t_state.api_info.logging_enabled)
+  if (!sm->t_state.api_info.logging_enabled ||
+      sm->t_state.http_config_param->node_no == -1)
     return;
 
   const char *host;
-  int host_len, port;
+  int host_len;
   int64_t write_bytes, rt;
   int hit, ret_code, proto;
   bool remap_failed;
 
   if (sm->t_state.pristine_url.valid()) {
     host = sm->t_state.pristine_url.host_get(&host_len);
-    port = sm->t_state.pristine_url.port_get();
   } else {
     host = NULL;
     host_len = 0;
-    port = 0;
   }
   proto = sm->proto_type;
 
@@ -176,7 +175,7 @@ update_real_stats(HttpSM *sm)
 
   remap_failed = !sm->t_state.url_remap_success;
 
-  rst.add_one(proto, host, host_len, write_bytes, rt, hit, ret_code, remap_failed, port);
+  rst.add_one(proto, host, host_len, write_bytes, rt, hit, ret_code, remap_failed, sm->t_state.http_config_param->node_no);
 }
 
 

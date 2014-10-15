@@ -1410,6 +1410,7 @@ HttpConfig::startup()
   HttpEstablishStaticConfigLongLong(c.post_copy_size, "proxy.config.http.post_copy_size");
   HttpEstablishStaticConfigByte(c.oride.range_elimination_enabled, "proxy.config.http.range_elimination_enabled");
 
+  HttpEstablishStaticConfigLongLong(c.node_no, "proxy.config.log.node_no");
   // Transparency flag.
   char buffer[10];
   if (REC_ERR_OKAY ==  RecGetRecordString("proxy.config.http.transparent",
@@ -1668,6 +1669,7 @@ HttpConfig::reconfigure()
   params->post_copy_size = m_master.post_copy_size;
   params->oride.range_elimination_enabled = INT_TO_BOOL(m_master.oride.range_elimination_enabled);
 
+  params->node_no = m_master.node_no;
   // Local Manager
   params->autoconf_port = m_master.autoconf_port;
   params->autoconf_localhost_only = m_master.autoconf_localhost_only;

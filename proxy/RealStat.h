@@ -14,7 +14,7 @@ struct RealStatEntry
 
   uint32_t key;
   int32_t proto;
-  int32_t port;
+  int32_t node;
   int32_t domain_len;
   int64_t out_bytes;
   int64_t rt; // ms
@@ -55,7 +55,7 @@ struct RealStatTable
   
   void init();
   void add_one(int proto, const char * host, int host_len, int64_t s,
-      int64_t rt, int hit, int ret_code, bool remap_failed, short port = 0);
+      int64_t rt, int hit, int ret_code, bool remap_failed, int node);
   void add_entry(RealStatEntry *entry);
   void write_file(FILE *file);
   int write_buffer(MIOBuffer *buf);

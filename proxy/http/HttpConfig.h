@@ -833,6 +833,9 @@ public:
   // > 0, the max time that the read to wait for writer`s response
   MgmtInt cache_max_rww_delay;
 
+  // to record the real stats come from
+  MgmtInt node_no;
+
   OverridableHttpConfigParams oride;
 
   ////////////////////
@@ -1012,6 +1015,7 @@ HttpConfigParams::HttpConfigParams()
     ignore_accept_charset_mismatch(0),
     normalize_ae_gzip(1),
     cache_max_rww_delay(0),
+    node_no(-1),
     autoconf_port(0),
     autoconf_localhost_only(0)
 
