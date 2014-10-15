@@ -127,6 +127,9 @@ milestone_difference_msec(const ink_hrtime start, const ink_hrtime end)
 static void
 update_real_stats(HttpSM *sm)
 {
+  if (!sm->t_state.api_info.logging_enabled)
+    return;
+
   const char *host;
   int host_len, port;
   int64_t write_bytes, rt;
@@ -172,8 +175,6 @@ update_real_stats(HttpSM *sm)
     ret_code = 0; // means client abort
 
   remap_failed = !sm->t_state.url_remap_success;
-  if (sm->t_state.http_config_param->reverse_proxy_enabled == 0)
-    remap_failed = true;
 
   rst.add_one(proto, host, host_len, write_bytes, rt, hit, ret_code, remap_failed, port);
 }
