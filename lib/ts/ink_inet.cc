@@ -165,7 +165,7 @@ const char *ats_ip_ntop(const struct sockaddr *addr, char *dst, size_t size)
     break;
   default:
     zret = dst;
-    snprintf(dst, size, "*Not IP address [%u]*", addr->sa_family);
+    snprintf(dst, size, "[%u]", addr->sa_family);
     break;
   }
   return zret;
