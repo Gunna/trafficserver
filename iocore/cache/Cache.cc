@@ -2696,7 +2696,8 @@ CacheVC::handleReadDone(int event, Event *e) {
         cutoff_check = ((!doc_len && (int64_t)doc->total_len < cache_config_ram_cache_cutoff)
                         || (doc_len && (int64_t)doc_len < cache_config_ram_cache_cutoff)
                         || !cache_config_ram_cache_cutoff || (params && params->cache_force_in_ram));
-        if (cutoff_check && !f.doc_from_ram_cache) {
+        // temp solution for prevent crash for buf from malloc but freelist
+        if (cutoff_check && !f.doc_from_ram_cache && buf.m_ptr->_size_index >= 0) {
           if (!f.ram_fixup) {
             uint64_t o = dir_get_offset(&dir);
             vol->ram_cache->put(read_key, buf, doc->len, http_copy_hdr, (uint32_t)(o >> 32), (uint32_t)o);
