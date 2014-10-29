@@ -108,6 +108,7 @@ uint64_t num_transed_ssd = 0;
 uint64_t size_trans_alloced = 0;
 uint64_t size_trans_freed = 0;
 uint64_t num_transistor_in_ssd = 0;
+bool clear_ssd = false;
 #endif
 static volatile uint64_t used_direntries = 0;
 static volatile int initialize_disk = 0;
@@ -845,6 +846,7 @@ CacheProcessor::start_internal(int flags)
         disk->io.aiocb.aio_reqprio = 0;
         disk->io.action = disk;
         disk->io.thread = AIO_CALLBACK_THREAD_ANY;
+        disk->md5.encodeBuffer(path, strlen(path));
         g_ssd_disks[gn_ssd_disks++] = disk;
       }
     } else
@@ -1313,7 +1315,9 @@ ssdvol_clear_init(SSDVol *d)
   d->header->magic = VOL_MAGIC;
   d->header->version.ink_major = CACHE_DB_MAJOR_VERSION;
   d->header->version.ink_minor = CACHE_DB_MINOR_VERSION;
-  d->header->agg_pos = d->header->write_pos = d->start;
+  d->header->agg_pos = d->header->write_pos = d->header->start = d->start;
+  d->header->length = d->len;
+  d->header->md5 = d->disk->md5;
   d->header->last_write_pos = d->header->write_pos;
   d->header->phase = 0;
   d->header->cycle = 0;
@@ -1343,6 +1347,15 @@ vol_clear_init(Vol *d)
 
 #ifdef SSD_CACHE
   for (int i = 0; i < d->num_ssd_vols; i++) {
+    double r = (double) d->len / STORE_BLOCK_SIZE / total_cache_size;
+    off_t vlen = off_t (r * g_ssd_disks[i]->len * STORE_BLOCK_SIZE);
+    vlen = (vlen / STORE_BLOCK_SIZE) * STORE_BLOCK_SIZE;
+    off_t start = ink_atomic_increment(&g_ssd_disks[i]->skip, vlen);
+    d->header->ssd_header[i].start = start;
+    d->header->ssd_header[i].length = vlen;
+    d->header->ssd_header[i].md5 = g_ssd_disks[i]->md5;
+    ink_assert(d->ssd_vols[i].start + d->ssd_vols[i].len <= g_ssd_disks[i]->len * STORE_BLOCK_SIZE);
+    d->ssd_vols[i].init(d, &(d->header->ssd_header[i]), g_ssd_disks[i]);
     ssdvol_clear_init(&(d->ssd_vols[i]));
   }
 #endif
@@ -1470,18 +1483,11 @@ Ldone:
   dir = (Dir *) (raw_dir + vol_headerlen(this));
   header = (VolHeaderFooter *) raw_dir;
   footer = (VolHeaderFooter *) (raw_dir + vol_dirlen(this) - ROUND_TO_STORE_BLOCK(sizeof(VolHeaderFooter)));
-
 #ifdef SSD_CACHE
   num_ssd_vols = good_ssd_disks;
-  ink_assert(num_ssd_vols >= 0 && num_ssd_vols <= 8);
   for (int i = 0; i < num_ssd_vols; i++) {
-    double r = (double) blocks / total_cache_size;
-    off_t vlen = off_t (r * g_ssd_disks[i]->len * STORE_BLOCK_SIZE);
-    vlen = (vlen / STORE_BLOCK_SIZE) * STORE_BLOCK_SIZE;
-    off_t start = g_ssd_disks[i]->skip;
-    ssd_vols[i].init(start, vlen, g_ssd_disks[i], this, &(this->header->ssd_header[i]));
-    g_ssd_disks[i]->skip += vlen;
-    ink_assert(ssd_vols[i].start + ssd_vols[i].len <= g_ssd_disks[i]->len * STORE_BLOCK_SIZE);
+    ssd_vols[i].header = &(this->header->ssd_header[i]);
+    memset(ssd_vols[i].header, 0, sizeof(SSDVolHeaderFooter));
   }
 #endif
 
@@ -1591,21 +1597,35 @@ Vol::handle_dir_read(int event, void *data)
   sector_size = header->sector_size;
 
 #ifdef SSD_CACHE
-  if (num_ssd_vols > 0) {
-    ssd_done = 0;
+  if (clear_ssd) {
+    Note("ssd disks changed, clearing ssd_vols for %s", this->hash_id);
     for (int i = 0; i < num_ssd_vols; i++) {
-      ssd_vols[i].recover_data();
+      double r = (double) len / STORE_BLOCK_SIZE / total_cache_size;
+      off_t vlen = off_t (r * g_ssd_disks[i]->len * STORE_BLOCK_SIZE);
+      vlen = (vlen / STORE_BLOCK_SIZE) * STORE_BLOCK_SIZE;
+      off_t start = ink_atomic_increment(&g_ssd_disks[i]->skip, vlen);
+      this->header->ssd_header[i].start = start;
+      this->header->ssd_header[i].length = vlen;
+      this->header->ssd_header[i].md5 = g_ssd_disks[i]->md5;
+      ink_assert(ssd_vols[i].start + ssd_vols[i].len <= g_ssd_disks[i]->len * STORE_BLOCK_SIZE);
+      ssd_vols[i].init(this, &(this->header->ssd_header[i]), g_ssd_disks[i]);
+      ssdvol_clear_init(&(ssd_vols[i]));
     }
+    clear_ssd_dir(this);
   } else {
-#endif
-
-  return this->recover_data();
-
-#ifdef SSD_CACHE
+    for (int i = 0; i < num_ssd_vols; i++) {
+      for (int j = 0; j < good_ssd_disks; j++) {
+        if (header->ssd_header[i].md5 == g_ssd_disks[j]->md5) {
+          ssd_vols[i].init(this, &header->ssd_header[i], g_ssd_disks[j]);
+          ssd_vols[i].recover_data();
+          break;
+        }
+      }
+    }
+    return EVENT_CONT;
   }
 #endif
-
-  return EVENT_CONT;
+  return this->recover_data();
 }
 
 int
@@ -1950,6 +1970,23 @@ Vol::handle_header_read(int event, void *data)
 
     if (hf[0]->sync_serial == hf[1]->sync_serial &&
         (hf[0]->sync_serial >= hf[2]->sync_serial || hf[2]->sync_serial != hf[3]->sync_serial)) {
+#ifdef SSD_CACHE
+    if (!clear_ssd) {
+      bool diskchange = false;
+      for (int i = 0; !diskchange && i < num_ssd_vols; i++) {
+        diskchange = true;
+        for (int j = 0; j < good_ssd_disks; j++) {
+          if (hf[0]->ssd_header[i].md5 == g_ssd_disks[j]->md5) {
+            diskchange = false;
+            break;
+          }
+        }
+      }
+      if (diskchange) {
+        clear_ssd = true;
+      }
+    }
+#endif
       SET_HANDLER(&Vol::handle_dir_read);
       if (is_debug_tag_set("cache_init"))
         Note("using directory A for '%s'", hash_id);
@@ -1958,7 +1995,23 @@ Vol::handle_header_read(int event, void *data)
     }
     // try B
     else if (hf[2]->sync_serial == hf[3]->sync_serial) {
-
+#ifdef SSD_CACHE
+    if (!clear_ssd) {
+      bool diskchange = false;
+      for (int i = 0; !diskchange && i < num_ssd_vols; i++) {
+        diskchange = true;
+        for (int j = 0; j < good_ssd_disks; j++) {
+          if (hf[0]->ssd_header[i].md5 == g_ssd_disks[j]->md5) {
+            diskchange = false;
+            break;
+          }
+        }
+      }
+      if (diskchange) {
+        clear_ssd = true;
+      }
+    }
+#endif
       SET_HANDLER(&Vol::handle_dir_read);
       if (is_debug_tag_set("cache_init"))
         Note("using directory B for '%s'", hash_id);

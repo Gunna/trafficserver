@@ -85,6 +85,9 @@ struct SSDVolHeaderFooter
   unsigned int magic;
   VersionNumber version;
   time_t create_time;
+  INK_MD5 md5; // the md5 of CacheDisk
+  off_t start;
+  off_t length;
   off_t write_pos;
   off_t last_write_pos;
   off_t agg_pos;
@@ -409,13 +412,14 @@ struct SSDVol: public Continuation
     return INK_ALIGN(ll, disk->hw_sector_size);
   }
 
-  void init(off_t s, off_t l, CacheDisk *ssd, Vol *v, SSDVolHeaderFooter *hptr) {
+  void init(Vol *v, SSDVolHeaderFooter *hptr, CacheDisk *ssd) {
+    ink_assert(hptr->md5 == ssd->md5);
     const size_t hash_id_size = strlen(ssd->path) + 32;
     hash_id = (char *)ats_malloc(hash_id_size);
-    snprintf(hash_id, hash_id_size, "%s %" PRIu64 ":%" PRIu64 "", ssd->path, s, l);
+    snprintf(hash_id, hash_id_size, "%s %" PRIu64 ":%" PRIu64 "", ssd->path, hptr->start, hptr->length);
 
-    skip = start = s;
-    len = l;
+    skip = start = hptr->start;
+    len = hptr->length;
     disk = ssd;
     fd = disk->fd;
     vol = v;
@@ -504,7 +508,6 @@ struct Vol: public Continuation
   uint32_t ssd_index;
   Queue<MigrateToSSD, MigrateToSSD::Link_hash_link> mig_hash[MIGRATE_BUCKETS];
   volatile int ssd_done;
-
 
   bool migrate_probe(CacheKey *key, MigrateToSSD **result) {
     uint32_t indx = key->word(3) % MIGRATE_BUCKETS;
@@ -615,6 +618,9 @@ struct Vol: public Continuation
     agg_buffer = (char *)ats_memalign(sysconf(_SC_PAGESIZE), AGG_SIZE);
     memset(agg_buffer, 0, AGG_SIZE);
     SET_HANDLER(&Vol::aggWrite);
+#ifdef SSD_CACHE
+    ssd_done = 0;
+#endif
   }
 
   ~Vol() {

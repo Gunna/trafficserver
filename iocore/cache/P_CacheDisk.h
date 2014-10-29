@@ -103,7 +103,7 @@ struct CacheDisk: public Continuation
   DiskVol *free_blocks;
   int num_errors;
   int cleared;
-
+  INK_MD5 md5;
   CacheDisk()
     : Continuation(new_ProxyMutex()), header(NULL),
       path(NULL), header_len(0), len(0), start(0), skip(0),
