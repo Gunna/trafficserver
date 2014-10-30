@@ -1612,7 +1612,7 @@ Vol::handle_dir_read(int event, void *data)
       ssdvol_clear_init(&(ssd_vols[i]));
     }
     clear_ssd_dir(this);
-  } else {
+  } else if (num_ssd_vols > 0) {
     for (int i = 0; i < num_ssd_vols; i++) {
       for (int j = 0; j < good_ssd_disks; j++) {
         if (header->ssd_header[i].md5 == g_ssd_disks[j]->md5) {
