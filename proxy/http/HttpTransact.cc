@@ -8517,7 +8517,7 @@ HttpTransact::build_error_response(State *s, HTTPStatus status_code, const char 
     reason_phrase = reason_buffer;
   }
 
-  if (s->http_config_param->errors_log_error_pages) {
+  if (s->http_config_param->errors_log_error_pages && status_code >= HTTP_STATUS_BAD_REQUEST) {
     char ip_string[INET6_ADDRSTRLEN];
 
     Log::error("RESPONSE: sent %s status %d (%s) for '%s'", 
