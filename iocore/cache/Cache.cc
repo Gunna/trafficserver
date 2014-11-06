@@ -1424,12 +1424,13 @@ Vol::init(char *s, int vol_no, off_t blocks, off_t dir_skip, bool clear)
   int evac_len = (int) evacuate_size * sizeof(DLL<EvacuationBlock>);
   evacuate = (DLL<EvacuationBlock> *)ats_malloc(evac_len);
   memset(evacuate, 0, evac_len);
+
 #if TS_USE_DIR_SHM
   key_t key;
   int shmid;
   struct shmid_ds shm_buf;
-  bool shm_exist = false;
   bool use_shm = false;
+  bool shm_exist = false;
   if ((key = ftok(path, volume_number)) == -1)
   {
     Note("ftok: %s, %d, %s", path, volume_number, strerror(errno));
@@ -1483,11 +1484,13 @@ Ldone:
   dir = (Dir *) (raw_dir + vol_headerlen(this));
   header = (VolHeaderFooter *) raw_dir;
   footer = (VolHeaderFooter *) (raw_dir + vol_dirlen(this) - ROUND_TO_STORE_BLOCK(sizeof(VolHeaderFooter)));
+
 #ifdef SSD_CACHE
   num_ssd_vols = good_ssd_disks;
   for (int i = 0; i < num_ssd_vols; i++) {
     ssd_vols[i].header = &(this->header->ssd_header[i]);
-    memset(ssd_vols[i].header, 0, sizeof(SSDVolHeaderFooter));
+    if (!dir_shm)
+      memset(ssd_vols[i].header, 0, sizeof(SSDVolHeaderFooter));
   }
 #endif
 
@@ -1512,6 +1515,23 @@ Ldone:
     io.aio_result = io.aiocb.aio_nbytes;
     init_info = 0;
     
+#ifdef SSD_CACHE
+    if (!clear_ssd) {
+      bool diskchange = false;
+      for (int i = 0; !diskchange && i < num_ssd_vols; i++) {
+        diskchange = true;
+        for (int j = 0; j < good_ssd_disks; j++) {
+          if (header->ssd_header[i].md5 == g_ssd_disks[j]->md5) {
+            diskchange = false;
+            break;
+          }
+        }
+      }
+      if (diskchange) {
+        clear_ssd = true;
+      }
+    }
+#endif
     return handle_dir_read(AIO_EVENT_DONE, &io);
   }
 #endif
