@@ -1069,6 +1069,10 @@ mime_hdr_copy_onto(MIMEHdrImpl *s_mh, HdrHeap *s_heap, MIMEHdrImpl *d_mh, HdrHea
     prev_d_fblock = &(d_mh->m_first_fblock);
     block_count = 1;
     for (s_fblock = s_mh->m_first_fblock.m_next; s_fblock != NULL; s_fblock = s_fblock->m_next) {
+      if (s_fblock->is_useless()) {             // ignore useless MIMEFieldBlockImpl
+        continue;
+      }
+
       ++block_count;
       d_fblock = _mime_field_block_copy(s_fblock, s_heap, d_heap);
       prev_d_fblock->m_next = d_fblock;
@@ -1111,7 +1115,13 @@ static inline MIMEField *rebase(
 
 static inline void relocate(MIMEField *field, MIMEFieldBlockImpl *dest_block, MIMEFieldBlockImpl *src_block)
 {
-  for ( ; src_block; src_block = src_block->m_next, dest_block = dest_block->m_next) {
+  MIMEFieldBlockImpl *first_block = src_block;
+
+  for (; src_block; src_block = src_block->m_next) {
+
+    if (src_block != first_block && src_block->is_useless())
+      continue;
+
     ink_release_assert(dest_block) ;
 
     if (field->m_next_dup >= src_block->m_field_slots &&
@@ -1119,6 +1129,8 @@ static inline void relocate(MIMEField *field, MIMEFieldBlockImpl *dest_block, MI
       field->m_next_dup = rebase(field->m_next_dup, dest_block->m_field_slots, src_block->m_field_slots);
       return;
     }
+
+    dest_block = dest_block->m_next;
   }
 }
 
@@ -3577,6 +3589,21 @@ MIMEFieldBlockImpl::check_strings(HeapCheck *heaps, int num_heaps)
       CHECK_STR(field->m_ptr_value, field->m_len_value, heaps, num_heaps);
     }
   }
+}
+
+bool
+MIMEFieldBlockImpl::is_useless()
+{
+  if (m_freetop != MIME_FIELD_BLOCK_SLOTS)
+    return false;
+
+  for (int i = 0; i < MIME_FIELD_BLOCK_SLOTS; i++) {
+    if (m_field_slots[i].is_live()) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 int

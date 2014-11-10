@@ -171,6 +171,9 @@ struct MIMEFieldBlockImpl:public HdrHeapObjImpl
 
   // Sanity Check Functions
   void check_strings(HeapCheck * heaps, int num_heaps);
+
+  // Useless Check
+  bool is_useless();
 };
 
 /***********************************************************************
