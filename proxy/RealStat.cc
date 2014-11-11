@@ -6,12 +6,12 @@ IpAddr realstat_ip;
 RealStatCollectionAccept *real_stat_collation_accept = NULL;
 int realstat_port;
 int realstat_mode;
-char real_snap_filename[PATH_NAME_MAX + 1];
+char real_snap_dir[PATH_NAME_MAX + 1];
+FILE *real_file = NULL;
 
 static const char unknown_domain[] = "unkown_domain";
 static ClassAllocator<RealStatEntry> realStatEntryAllocator(
     "RealStatEntryAllocator");
-FILE *real_stat_file = NULL;
 
 static inline
 unsigned int makeHash(const char *string, int len) {
@@ -35,23 +35,14 @@ unsigned int makeHash(const char *string, int len) {
 
 struct RealStatSyncer: public Continuation {
   int mainEvent(int event, void *data) {
-    if (data == (void *) truncate_event) {
-      fclose(real_stat_file);
-      real_stat_file = fopen(real_snap_filename, "w");
-      if (!real_stat_file)
-        Warning("truncate stat file %s failed!", real_snap_filename);
-    } else if (real_stat_file)
-      rst.write_file(real_stat_file);
+    rst.write_file();
     return EVENT_CONT;
   }
 
   RealStatSyncer() :
       Continuation(new_ProxyMutex()) {
     SET_HANDLER(&RealStatSyncer::mainEvent);
-    truncate_event = eventProcessor.schedule_every(this, HRTIME_SECONDS(300));
   }
-
-  Event * truncate_event;
 };
 
 static inline
@@ -317,10 +308,22 @@ void RealStatTable::init() {
     ink_spinlock_init(&b_locks[i]);
 }
 
-void RealStatTable::write_file(FILE *file) {
-  if (!file)
-    return;
+void RealStatTable::write_file() {
+  char real_snap_file[PATH_NAME_MAX + 1];
+  strcpy(real_snap_file, real_snap_dir);
+  strcat(real_snap_file, "current");
+  if (real_file == NULL) {
+    real_file = fopen(real_snap_file, "w");
+    if (!real_file) {
+      Warning("file %s open failed!", real_snap_file);
+      return;
+    }
+  }
 
+  char new_name[128];
+  ink_hrtime now = ink_get_hrtime();
+  sprintf(new_name, "%s%"PRId64".old", real_snap_dir, now);
+  bool havelogs = false;
   for (int i = 0; i < MAX_BUCKETS; i++) {
     ink_spinlock_acquire(&b_locks[i]);
     for (RealStatEntry *entry = buckets[i].head; entry;) {
@@ -332,7 +335,8 @@ void RealStatTable::write_file(FILE *file) {
         realStatEntryAllocator.free(p);
         continue;
       }
-      write_entry(file, p);
+      write_entry(real_file, p);
+      havelogs = true;
       // reset the data
       int len = (char *) &p->domain - (char *) &p->out_bytes;
       memset(&p->out_bytes, 0, len);
@@ -340,7 +344,12 @@ void RealStatTable::write_file(FILE *file) {
     ink_spinlock_release(&b_locks[i]);
   }
 
-  fflush(file);
+  if (havelogs) {
+    fflush(real_file);
+    fclose(real_file);
+    rename(real_snap_file, new_name);
+    real_file = NULL;
+  }
 }
 
 int RealStatTable::write_buffer(MIOBuffer *buf) {
@@ -564,17 +573,23 @@ int RealStatClientSM::write_data() {
   return sz;
 }
 
-void realstat_init(const char *run_dir) {
+void realstat_init(const char *log_dir) {
   IOCORE_EstablishStaticConfigInt32(realstat_mode, "proxy.local.log.real_collation_mode");
 
-  char *p = real_snap_filename;
-  int len = strlen(run_dir);
-  memcpy(p, run_dir, len);
-  p += len;
-  if (*(p - 1) != '/')
-    *p++ = '/';
+  strcpy(real_snap_dir, log_dir);
+  int len = strlen(real_snap_dir);
+  if (real_snap_dir[len - 1] != '/') {
+    real_snap_dir[len] = '/';
+    real_snap_dir[len + 1] = 0;
+  }
 
-  IOCORE_ReadConfigString(p, "proxy.config.stats.real_snap_file", PATH_NAME_MAX);
+  char *real_dir = REC_ConfigReadString("proxy.config.stats.real_snap_dir");
+  strcat(real_snap_dir, real_dir);
+  len = strlen(real_snap_dir);
+  if (real_snap_dir[len - 1] != '/') {
+    real_snap_dir[len] = '/';
+    real_snap_dir[len + 1] = 0;
+  }
 
   IOCORE_EstablishStaticConfigInt32(realstat_port, "proxy.config.log.real_collation_port");
 
@@ -586,13 +601,13 @@ void realstat_init(const char *run_dir) {
   if (realstat_mode == 1)
     eventProcessor.schedule_imm(NEW(new RealStatClientSM));
   else if (realstat_mode == 2) {
-    real_stat_file = fopen(real_snap_filename, "w");
-    if (!real_stat_file) {
-      Warning("real stat file %s open failed!", real_snap_filename);
-    } else {
-      eventProcessor.schedule_every((NEW(new RealStatSyncer)),
-          HRTIME_SECONDS(5));
+    if (access(real_snap_dir, R_OK) == -1) {
+      fprintf(stderr,"unable to access() config dir '%s': %d, %s\n",
+          real_snap_dir, errno, strerror(errno));
+      exit(1);
     }
+    eventProcessor.schedule_every((NEW(new RealStatSyncer)),
+        HRTIME_SECONDS(5));
 
     real_stat_collation_accept = NEW(
         new RealStatCollectionAccept(realstat_port));

@@ -1196,7 +1196,7 @@ RecordElement RecordsConfig[] = {
   // Jira TS-21
   {RECT_CONFIG, "proxy.config.stats.snap_file", RECD_STRING, "stats.snap", RECU_RESTART_TS, RR_NULL, RECC_NULL, NULL, RECA_NULL}
   ,
-  {RECT_CONFIG, "proxy.config.stats.real_snap_file", RECD_STRING, "real_stats.snap", RECU_RESTART_TS, RR_NULL, RECC_NULL, NULL, RECA_NULL}
+  {RECT_CONFIG, "proxy.config.stats.real_snap_dir", RECD_STRING, "realstat", RECU_RESTART_TS, RR_NULL, RECC_NULL, NULL, RECA_NULL}
   ,
 
   //        ###########

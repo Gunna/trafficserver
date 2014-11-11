@@ -57,7 +57,7 @@ struct RealStatTable
   void add_one(int proto, const char * host, int host_len, int64_t s,
       int64_t rt, int hit, int ret_code, bool remap_failed, int node);
   void add_entry(RealStatEntry *entry);
-  void write_file(FILE *file);
+  void write_file();
   int write_buffer(MIOBuffer *buf);
 };
 
@@ -133,7 +133,7 @@ struct RealStatClientSM : public Continuation
   MIOBuffer m_abort_buffer;
 };
 
-void realstat_init(const char *run_dir);
+void realstat_init(const char *log_dir);
 
 extern RealStatTable rst;
 extern int realstat_mode;
