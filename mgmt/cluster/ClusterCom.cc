@@ -204,6 +204,12 @@ drainIncomingChannel(void *arg)
         mgmt_elog(stderr, errno, "[drainIncomingChannel] error accepting " "reliable connection\n");
         continue;
       }
+
+      if (lmgmt->ccom->verify_addr(&cli_addr) != 0) {
+        close(req_fd);
+        continue;
+      }
+
       if (fcntl(req_fd, F_SETFD, 1) < 0) {
         mgmt_elog(stderr, errno, "[drainIncomingChannel] Unable to set close " "on exec flag\n");
         close(req_fd);
@@ -372,8 +378,8 @@ cluster_com_port_watcher(const char *name, RecDataT data_type, RecData data, voi
 }                               /* End cluster_com_port_watcher */
 
 
-ClusterCom::ClusterCom(unsigned long oip, char *host, int port, char *group, int sport, char *p)
-  : our_wall_clock(0), alive_peers_count(0), reliable_server_fd(0), broadcast_fd(0), receive_fd(0)
+ClusterCom::ClusterCom(const char *intrName, unsigned long oip, char *host, int port, char *group, int sport, char *p)
+  : our_wall_clock(0), alive_peers_count(0), reliable_server_fd(0), broadcast_fd(0), receive_fd(0), conn_check(0), addr_num(0)
 {
   int rec_err;
   bool found = false;
@@ -486,6 +492,10 @@ ClusterCom::ClusterCom(unsigned long oip, char *host, int port, char *group, int
   ink_mutex_init(&mutex, "ccom-mutex");
   peers = ink_hash_table_create(InkHashTableKeyType_String);
   mismatchLog = ink_hash_table_create(InkHashTableKeyType_String);
+
+  conn_check = REC_readInteger("proxy.config.cluster.conn_check", &found);
+
+  retrieveNetifInfo(intrName);
 
   if (cluster_type != NO_CLUSTER) {
     ink_thread_create(drainIncomingChannel_broadcast, 0);   /* Spin drainer thread */
@@ -2041,6 +2051,87 @@ ClusterCom::receiveIncomingMessage(char *buf, int max)
   return nbytes;
 }                               /* End ClusterCom::processIncomingMessages */
 
+void
+ClusterCom::retrieveNetifInfo(const char *intrName)
+{
+  struct ifconf ifc;
+  struct ifreq ifr[32];
+  int sd, i, ifc_num;
+  uint8_t *ptr, *ntr;
+  struct sockaddr_in addr, netmask;
+
+  sd = socket(PF_INET, SOCK_DGRAM, 0);
+  if (sd < 0)
+    return;
+
+  ifc.ifc_len = sizeof(ifr);
+  ifc.ifc_ifcu.ifcu_buf = (caddr_t)ifr;
+
+  if (ioctl(sd, SIOCGIFCONF, &ifc) == 0) {
+    ifc_num = ifc.ifc_len / sizeof(struct ifreq);
+  }
+
+  mgmt_log("[ClusterCom::retrieveNetifInfo] intrName: %s, ifc_num: %d\n", intrName, ifc_num);
+
+  for (i = 0; i < ifc_num; i++) {
+
+    if (ifr[i].ifr_addr.sa_family != AF_INET)
+      continue;
+
+    if (strcmp(ifr[i].ifr_name, intrName) != 0)
+      continue;
+
+    if (ioctl(sd, SIOCGIFADDR, &ifr[i]) != 0) {
+      continue;
+    }
+    addr = *(struct sockaddr_in*)(&ifr[i].ifr_addr);
+
+    if (ioctl(sd, SIOCGIFNETMASK, &ifr[i]) != 0) {
+      continue;
+    }
+
+    netmask = *(struct sockaddr_in*)(&ifr[i].ifr_netmask);
+
+    addr_list[addr_num].ip.s_addr = ntohl(addr.sin_addr.s_addr);
+    addr_list[addr_num].mask.s_addr = ntohl(netmask.sin_addr.s_addr);
+
+    ptr = (uint8_t*)&(addr_list[addr_num].ip.s_addr);
+    ntr = (uint8_t*)&(addr_list[addr_num].mask.s_addr);
+
+    mgmt_log("[ClusterCom::retrieveNetifInfo] addr: %d.%d.%d.%d, mask: %d.%d.%d.%d\n",
+             ptr[3], ptr[2], ptr[1], ptr[0], ntr[3], ntr[2], ntr[1], ntr[0]);
+
+    addr_num++;
+  }
+
+  close(sd);
+
+  return;
+}
+
+int
+ClusterCom::verify_addr(struct sockaddr_in *cli_addr)
+{
+  int           i;
+  uint32_t      h;
+
+  if (conn_check == 0 || addr_num == 0)
+    return 0;
+
+  h = ntohl(cli_addr->sin_addr.s_addr);
+
+  if ((h & 0x7f000000) == 0x7f000000)
+    return 0;
+
+  for (i = 0; i < addr_num; i++) {
+    if ((h & addr_list[i].mask.s_addr) ==
+            (addr_list[i].ip.s_addr & addr_list[i].mask.s_addr)) {
+      return 0;
+    }
+  }
+
+  return -1;
+}
 
 /*
  * isMaster()

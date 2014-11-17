@@ -55,6 +55,8 @@
 #define MAX_MC_GROUP_LEN 20
 #define MAX_NODE_SYSINFO_STRING 32
 
+#define MAX_CLUSTER_ADDRESS_NUM 32
+
 #define CLUSTER_CONFIG_FILE_BLURB "# Cluster Configuration file\n#\n# This file is machine generated and machine parsed.\n# Please do not change this file by hand.\n#\n# This file designates the machines which make up the cluster\n# proper.  Data and load are distributed among these machines.\n#\n############################################################################\n# Number\n# IP:Port \n# ...\n############################################################################\n# Number = { 0, 1 ... } where 0 is a stand-alone proxy\n# IP:Port = IP address: cluster accept port number\n#\n# Example 1: stand-alone proxy\n# 0\n#\n# Example 2: 3 machines\n# 3\n# 127.1.2.3:83\n# 127.1.2.4:83\n# 127.1.2.5:83\n#\n"
 
 enum MgmtClusterType
@@ -94,7 +96,8 @@ class ClusterCom
 {
 public:
 
-  ClusterCom(unsigned long oip, char *hname, int port, char *group, int sport, char *p);
+  ClusterCom(const char *intrName, unsigned long oip, char *hname, int port, char *group,
+             int sport, char *p);
    ~ClusterCom()
   {
   };
@@ -127,6 +130,9 @@ public:
   bool sendReliableMessageReadTillClose(unsigned long addr, char *buf, int len, textBuffer * reply);
 
   int receiveIncomingMessage(char *buf, int max);
+
+  void retrieveNetifInfo(const char *intrName);
+  int verify_addr(struct sockaddr_in *cli_addr);
 
   bool isMaster();
   unsigned long lowestPeer(int *no);
@@ -182,6 +188,16 @@ public:
   struct sockaddr_in broadcast_addr;
   struct sockaddr_in receive_addr;
 
+  int conn_check;
+
+  typedef struct
+  {
+    struct in_addr ip;
+    struct in_addr mask;
+  } AddressInfo;
+
+  AddressInfo addr_list[MAX_CLUSTER_ADDRESS_NUM];
+  int addr_num;
 };                              /* End class ClusterCom */
 
 extern int cluster_enabled;
