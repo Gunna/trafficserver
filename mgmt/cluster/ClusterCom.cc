@@ -2069,6 +2069,9 @@ ClusterCom::retrieveNetifInfo(const char *intrName)
 
   if (ioctl(sd, SIOCGIFCONF, &ifc) == 0) {
     ifc_num = ifc.ifc_len / sizeof(struct ifreq);
+
+  } else {
+    ifc_num = 0;
   }
 
   mgmt_log("[ClusterCom::retrieveNetifInfo] intrName: %s, ifc_num: %d\n", intrName, ifc_num);
