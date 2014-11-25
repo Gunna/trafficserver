@@ -2754,6 +2754,8 @@ extern "C"
   /* --------------------------------------------------------------------------
      Cache VConnections */
   tsapi int64_t TSVConnCacheObjectSizeGet(TSVConn connp);
+  tsapi int TSIsVConnCacheOffsetReadCapable(TSVConn connp);
+  tsapi TSVIO TSVConnCacheRead(TSVConn connp, TSCont cont, TSIOBuffer bufp, int64_t nbytes, int64_t offset);
 
   /* --------------------------------------------------------------------------
      Transformations */

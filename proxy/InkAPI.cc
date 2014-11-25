@@ -6331,9 +6331,33 @@ TSVConnCacheObjectSizeGet(TSVConn connp)
 {
   sdk_assert(sdk_sanity_check_iocore_structure(connp) == TS_SUCCESS);
 
-  CacheVC *vc = (CacheVC *)connp;
+  CacheVConnection *vc = (CacheVConnection *)connp;
   return vc->get_object_size();
 }
+
+int
+TSIsVConnCacheOffsetReadCapable(TSVConn connp)
+{
+  sdk_assert(sdk_sanity_check_iocore_structure(connp) == TS_SUCCESS);
+
+  CacheVConnection *vc = (CacheVConnection *)connp;
+  return vc->is_pread_capable() ? 1 : 0;
+}
+
+TSVIO
+TSVConnCacheRead(TSVConn connp, TSCont contp, TSIOBuffer bufp, int64_t nbytes, int64_t offset)
+{
+  sdk_assert(sdk_sanity_check_iocore_structure(connp) == TS_SUCCESS);
+  sdk_assert(sdk_sanity_check_iocore_structure(contp) == TS_SUCCESS);
+  sdk_assert(sdk_sanity_check_iocore_structure(bufp) == TS_SUCCESS);
+  sdk_assert(nbytes >= 0);
+
+  FORCE_PLUGIN_MUTEX(contp);
+  CacheVConnection *vc = (CacheVConnection *) connp;
+
+  return reinterpret_cast<TSVIO>(vc->do_io_pread((INKContInternal *) contp, nbytes, (MIOBuffer *) bufp, offset));
+}
+
 
 void
 TSVConnCacheHttpInfoGet(TSVConn connp, TSCacheHttpInfo *infop)

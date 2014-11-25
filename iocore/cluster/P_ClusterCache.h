@@ -1380,7 +1380,7 @@ struct ClusterCacheVC: public CacheVConnection
   }
   virtual int64_t get_object_size()
   {
-    return alternate.object_size_get();
+    return doc_len;
   }
   virtual bool is_read_from_writer()
   {
