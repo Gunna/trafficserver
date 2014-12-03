@@ -320,14 +320,13 @@ CacheVC::openReadFromWriterHead(int event, Event * e)
   }
 
   bool header_only = false;
-  int result = cw->get_writer_meta(this, &header_only);
+  bool nd = true;
+  int result = cw->get_writer_meta(this, &header_only, &nd);
 
   if (result == 0) {
     Debug("cache_read_agg", "get writer meta: %d, %p, doc_len = %"PRId64"", result, this, doc_len);
     if (header_only) {
-      alternate.object_key_get(&key);
-      earliest_key = key;
-
+      key = earliest_key;
       if (first_buf._ptr()) {
         Doc *doc = (Doc *) first_buf->data();
         if (doc_len == doc->data_len()) {
@@ -338,7 +337,14 @@ CacheVC::openReadFromWriterHead(int event, Event * e)
           return callcont(CACHE_EVENT_OPEN_READ);
         }
       }
+      f.single_fragment = 0;
+      SET_HANDLER(&CacheVC::openReadStartEarliest);
+      return openReadStartEarliest(event, e);
+    }
 
+    if (nd) {
+      key = earliest_key;
+      f.single_fragment = 0;
       SET_HANDLER(&CacheVC::openReadStartEarliest);
       return openReadStartEarliest(event, e);
     }
@@ -371,7 +377,6 @@ CacheVC::handleReadFromWriter(int event, Event * e)
     return EVENT_CONT;
   }
 
-  ink_assert(event >= CACHE_EVENT_META_FROM_WRITER && event <= CACHE_EVENT_WRITER_ABORTED);
   ink_debug_assert(is_io_in_progress());
   set_io_not_in_progress();
   POP_HANDLER;
@@ -379,6 +384,8 @@ CacheVC::handleReadFromWriter(int event, Event * e)
   if (closed) {
     return die();
   }
+  if (event == CACHE_EVENT_WRITER_CLOSED || event == CACHE_EVENT_WRITER_ABORTED)
+    write_vc = NULL;
   return handleEvent(event, e);
 }
 int
@@ -581,16 +588,11 @@ CacheVC::openReadFromWriterMain(int event, Event * e)
   cancel_trigger();
   ink_assert(!closed && !is_io_in_progress() && mutex.m_ptr->thread_holding == this_ethread());
 
-  if (seek_to) {
-    vio.ndone = seek_to;
+  if (offset < seek_to) {
+    if (seek_to >= (int64_t) doc_len)
+      return calluser(VC_EVENT_EOS);
     offset = seek_to;
-    seek_to = 0;
   }
-//
-//  if (vio.ntodo() <= 0)
-//    return calluser(VC_EVENT_READ_COMPLETE);
-//  else if (offset >= (int64_t) doc_len)
-//    return calluser(VC_EVENT_EOS);
 
   if (vio.ntodo() <= 0)
     return EVENT_CONT;
@@ -598,52 +600,20 @@ CacheVC::openReadFromWriterMain(int event, Event * e)
   ink_assert(cw);
   int result = cw->get_writer_data(this);
 
-  if (result < 0) {
-    if (vio.ndone >= (int64_t)doc_len && vio.ntodo() > 0)
-      return calluser(VC_EVENT_EOS);
-    else  // writer aborted
-      return calluser(VC_EVENT_ERROR);
-  } else if (result == 0) {
+  if (result == 0) {
     if (vio.ntodo() <= 0)
       return calluser(VC_EVENT_READ_COMPLETE);
+    else if (offset >= (int64_t) doc_len)
+      return calluser(VC_EVENT_EOS);
     else
       return calluser(VC_EVENT_READ_READY);
-  }
+  } else if (result < 0)
+    return calluser(VC_EVENT_ERROR);
+
   // wait for the writer wake me up
   ink_assert(is_io_in_progress());
   PUSH_HANDLER(&CacheVC::handleReadFromWriter);
   return EVENT_CONT;
-//
-//  if (length < ((int64_t)doc_len) - vio.ndone) {
-//    DDebug("cache_read_agg", "truncation %X", first_key.word(1));
-//    if (is_action_tag_set("cache")) {
-//      ink_release_assert(false);
-//    }
-//    Warning("Document %X truncated at %d of %d, reading from writer", first_key.word(1), (int)vio.ndone, (int)doc_len);
-//    return calluser(VC_EVENT_ERROR);
-//  }
-//  /* its possible that the user did a do_io_close before
-//     openWriteWriteDone was called. */
-//  if (length > ((int64_t)doc_len) - vio.ndone) {
-//    int64_t skip_bytes = length - (doc_len - vio.ndone);
-//    iobufferblock_skip(writer_buf, &writer_offset, &length, skip_bytes);
-//  }
-//  int64_t bytes = length;
-//  if (bytes > vio.ntodo())
-//    bytes = vio.ntodo();
-//  if (vio.ndone >= (int64_t)doc_len) {
-//    ink_assert(bytes <= 0);
-//    // reached the end of the document and the user still wants more
-//    return calluser(VC_EVENT_EOS);
-//  }
-//  b = iobufferblock_clone(writer_buf, writer_offset, bytes);
-//  writer_buf = iobufferblock_skip(writer_buf, &writer_offset, &length, bytes);
-//  vio.buffer.mbuf->append_block(b);
-//  vio.ndone += bytes;
-//  if (vio.ntodo() <= 0)
-//    return calluser(VC_EVENT_READ_COMPLETE);
-//  else
-//    return calluser(VC_EVENT_READ_READY);
 }
 
 int
@@ -770,29 +740,29 @@ CacheVC::openReadMain(int event, Event * e)
   IOBufferBlock *b = NULL;
   int i = 0;
 
-  if (seek_to && bytes > 0) {
+  if (offset < seek_to && bytes > 0) {
     if (seek_to >= (int64_t)doc_len) {
-      vio.ndone = doc_len;
       return calluser(VC_EVENT_EOS);
     }
 
     if (!f.single_fragment) {
       ink_assert(frag_len);
-      i = seek_to / frag_len;
+      i = (seek_to - offset) / frag_len;
       if (i > 0) {
         while (i > 1) {
           next_CacheKey(&key, &key);
+          offset += frag_len;
           --i;
         }
-        seek_to %= frag_len;
         // mark the current fragment as garbage
         doc_pos = doc->len;
+        offset += frag_len;
         goto Lread;
       }
     }
-    doc_pos = doc->prefix_len() + seek_to;
+    doc_pos = doc->prefix_len() + (seek_to - offset);
     bytes = doc->len - doc_pos;
-    seek_to = 0;
+    offset = seek_to;
   }
 
   if (ntodo <= 0)
@@ -808,6 +778,7 @@ CacheVC::openReadMain(int event, Event * e)
   vio.buffer.mbuf->append_block(b);
   vio.ndone += bytes;
   doc_pos += bytes;
+  offset += bytes;
   if (vio.ntodo() <= 0)
     return calluser(VC_EVENT_READ_COMPLETE);
   else {
@@ -820,7 +791,19 @@ CacheVC::openReadMain(int event, Event * e)
     return EVENT_CONT;
   }
 Lread: {
-    if (vio.ndone >= (int64_t)doc_len)
+    cancel_trigger();
+    if (cw.m_ptr && !cw->writer_done()) {
+      // read from writer
+      SET_HANDLER(&CacheVC::openReadMain);
+      int result = cw->read_write_frag(this);
+      if (result == -1)
+        goto Lerror;
+      if (result > 0) {
+        PUSH_HANDLER(&CacheVC::handleReadFromWriter);
+        return EVENT_CONT;
+      }
+    }
+    if (offset >= (int64_t)doc_len)
       // reached the end of the document and the user still wants more
       return calluser(VC_EVENT_EOS);
     last_collision = 0;
@@ -829,7 +812,7 @@ Lread: {
     // we set up a schedule_imm event. The openReadReadDone discards
     // EVENT_IMMEDIATE events. So, we have to cancel that trigger and set
     // a new EVENT_INTERVAL event.
-    cancel_trigger();
+
     CACHE_TRY_LOCK(lock, vol->mutex, mutex->thread_holding);
     if (!lock) {
       SET_HANDLER(&CacheVC::openReadMain);
@@ -841,24 +824,6 @@ Lread: {
       if (ret == EVENT_RETURN)
         goto Lcallreturn;
       return EVENT_CONT;
-    } else if (write_vc) {
-      if (writer_done()) {
-        last_collision = NULL;
-        while (dir_probe(&earliest_key, vol, &dir, &last_collision)) {
-          if (dir_offset(&dir) == dir_offset(&earliest_dir)) {
-            DDebug("cache_read_agg", "%p: key: %X ReadMain complete: %d",
-                  this, first_key.word(1), (int)vio.ndone);
-            doc_len = vio.ndone;
-            goto Leos;
-          }
-        }
-        DDebug("cache_read_agg", "%p: key: %X ReadMain writer aborted: %d",
-              this, first_key.word(1), (int)vio.ndone);
-        goto Lerror;
-      }
-      DDebug("cache_read_agg", "%p: key: %X ReadMain retrying: %d", this, first_key.word(1), (int)vio.ndone);
-      SET_HANDLER(&CacheVC::openReadMain);
-      VC_SCHED_WRITER_RETRY();
     }
     if (is_action_tag_set("cache"))
       ink_release_assert(false);
@@ -868,8 +833,6 @@ Lread: {
   }
 Lerror:
   return calluser(VC_EVENT_ERROR);
-Leos:
-  return calluser(VC_EVENT_EOS);
 Lcallreturn:
   return handleEvent(AIO_EVENT_DONE, 0);
 }
@@ -1050,7 +1013,7 @@ Lread:
 Lcallreturn:
   return handleEvent(AIO_EVENT_DONE, 0); // hopefully a tail call
 Lsuccess:
-  if (write_vc)
+  if (cw.m_ptr)
     CACHE_INCREMENT_DYN_STAT(cache_read_busy_success_stat);
   SET_HANDLER(&CacheVC::openReadMain);
   return callcont(CACHE_EVENT_OPEN_READ);

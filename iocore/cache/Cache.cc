@@ -3701,6 +3701,317 @@ ink_cache_init(ModuleVersion v)
 #endif
 }
 
+void
+CacheWriterEntry::signal_reader(WriterSignalType type)
+{
+  CacheVC * vc = NULL;
+  Queue<CacheVC, CacheVC::Link_signal_link> q_tmp;
+  if (!sq_readers.head)
+    return;
+
+  switch (type) {
+  case WRITER_META: {
+    while ((vc = sq_readers.dequeue())) {
+      ink_debug_assert(vc->is_io_in_progress());
+      vc->initial_thread->schedule_imm(vc, CACHE_EVENT_META_FROM_WRITER);
+    }
+    break;
+  }
+  case WRITER_DATA: {
+    while ((vc = sq_readers.dequeue())) {
+      ink_debug_assert(vc->is_io_in_progress());
+      if (!vc->closed && total_len <= vc->offset) {
+        q_tmp.enqueue(vc);
+        continue;
+      }
+      vc->initial_thread->schedule_imm(vc, CACHE_EVENT_DATA_FROM_WRITER);
+    }
+    sq_readers.append(q_tmp);
+    break;
+  }
+  case WRITER_CLOSE: {
+    while ((vc = sq_readers.dequeue())) {
+      ink_debug_assert(vc->is_io_in_progress());
+      vc->initial_thread->schedule_imm(vc, CACHE_EVENT_WRITER_CLOSED);
+    }
+    break;
+  }
+  case WRITER_ABORT: {
+    while ((vc = sq_readers.dequeue())) {
+      ink_debug_assert(vc->is_io_in_progress());
+      vc->initial_thread->schedule_imm(vc, CACHE_EVENT_WRITER_ABORTED);
+    }
+    break;
+  }
+  default:
+    ink_assert(!"unexpected type");
+  }
+}
+
+void
+CacheWriterEntry::reserve_writer_head(CacheVC *vc)
+{
+  ink_debug_assert(vc == writer && vc->mutex->thread_holding == this_ethread());
+  ink_mutex_acquire(mutex);
+  first_buf = vc->first_buf;
+  ink_mutex_release(mutex);
+}
+void
+CacheWriterEntry::set_writer_meta(CacheVC *vc)
+{
+  ink_debug_assert(vc == writer && vc->mutex->thread_holding == this_ethread());
+  ink_mutex_acquire(mutex);
+  ink_assert(!alternate.valid() && doc_len == -1);
+  if (vc->vio.nbytes < cache_rww_max_doc_size) {
+    no_data = false;
+  } else
+    earliest_key = vc->earliest_key;
+  doc_len = vc->vio.nbytes;
+  if (vc->frag_type == CACHE_FRAG_TYPE_HTTP) {
+    alternate.copy(&vc->alternate);
+    alternate.object_size_set(doc_len);
+  }
+  signal_reader(WRITER_META);
+  ink_mutex_release(mutex);
+}
+int
+CacheWriterEntry::get_writer_meta(CacheVC *vc, bool *header_only, bool *nd)
+{
+  ink_debug_assert(this == vc->cw.m_ptr && vc->mutex->thread_holding == this_ethread());
+  ink_assert(!vc->is_io_in_progress());
+
+  CacheHTTPInfo tmp_alt;
+
+  if (not_rww) {
+    vc->cw = NULL;
+    return -1;
+  }
+
+  ink_mutex_acquire(mutex);
+  if (not_rww) {
+    ink_mutex_release(mutex);
+    vc->cw = NULL;
+    return -1;
+  }
+  if (vc->frag_type == CACHE_FRAG_TYPE_HTTP) {
+    if (writer_closed < 0 || (writer_closed > 0 && no_data && !header_only_update)
+        || !vc->params || vc->params->max_rww_delay <= 0) {
+      ink_mutex_release(mutex);
+      vc->cw = NULL;
+      return -1;
+    }
+    if (alternate.valid()) {
+      ink_debug_assert(doc_len >= 0);
+      tmp_alt.copy_shallow(&alternate);
+      vc->first_buf = first_buf;
+      *header_only = header_only_update;
+      ink_mutex_release(mutex);
+      float Q = HttpTransactCache::calculate_quality_of_match(vc->params, &vc->request,
+          &tmp_alt.m_alt->m_request_hdr, &tmp_alt.m_alt->m_response_hdr);
+      if (Q > 0) {
+        ink_mutex_acquire(mutex);
+        if (no_data && !total_len) {
+          ink_assert(!vc->signal_link.next && !vc->signal_link.prev);
+          sq_readers.enqueue(vc);
+          vc->set_read_while_write_in_progress();
+          VC_SCHED_RWW_WAIT_TIMEOUT(vc, vc->params->max_rww_delay);
+          ink_mutex_release(mutex);
+          return 1;
+        }
+        *nd = no_data;
+        vc->earliest_key = earliest_key;
+        vc->alternate.copy_shallow(&tmp_alt);
+        vc->doc_len = doc_len;
+        ink_mutex_release(mutex);
+        return 0;
+      } else {
+        Debug("read_from_writer", "alternate not matched!");
+        // writer not match the reader
+        // read from cache
+        vc->cw = NULL;
+        return -1;
+      }
+    } else {
+      // put my this in the list
+      ink_debug_assert(doc_len < 0);
+      vc->set_read_while_write_in_progress();
+      ink_assert(!vc->signal_link.next && !vc->signal_link.prev);
+      sq_readers.enqueue(vc);
+      ink_mutex_release(mutex);
+      VC_SCHED_RWW_WAIT_TIMEOUT(vc, vc->params->max_rww_delay);
+      return 1;
+    }
+  } else {
+    if (writer_closed < 0 || (writer_closed > 0 && no_data)) {
+      ink_mutex_release(mutex);
+      vc->cw = NULL;
+      return -1;
+    } else if (doc_len < 0) {
+      vc->set_read_while_write_in_progress();
+      ink_assert(!vc->signal_link.next && !vc->signal_link.prev);
+      sq_readers.enqueue(vc);
+      ink_mutex_release(mutex);
+      VC_SCHED_RWW_WAIT_TIMEOUT(vc, cache_config_rww_max_delay);
+      return 1;
+    }
+  }
+
+  vc->doc_len = doc_len;
+  ink_mutex_release(mutex);
+  return 0;
+}
+
+void
+CacheWriterEntry::set_writer_close(int close) {
+  if (writer_closed)
+    return;
+  ink_mutex_acquire(mutex);
+  if (close > 0) {
+    if (writer->frag_type == CACHE_FRAG_TYPE_HTTP) {
+      if (writer->alternate.valid()) {
+        if (!alternate.valid()) {
+          ink_assert(doc_len < 0);
+          alternate.copy(&writer->alternate);
+        }
+        if (writer->total_len > 0) {
+          doc_len = writer->total_len;
+          if (no_data && total_len == 0) {
+            blocks = writer->blocks;
+            skip = writer->offset;
+            total_len = doc_len;
+            no_data = false;
+          }
+        } else if (writer->f.update) {
+          doc_len = writer->update_len;
+          total_len = doc_len;
+          earliest_key = writer->update_key;
+          header_only_update = true;
+        } else if (writer->f.force_empty)
+          doc_len = 0;
+        else {
+          writer_closed = -1;
+          goto Lreturn;
+        }
+
+        alternate.object_size_set(doc_len);
+        writer_closed = 1;
+      } else {
+        writer_closed = -1;
+      }
+    } else {
+      doc_len = writer->total_len;
+      writer_closed = 1;
+    }
+  } else
+    writer_closed = -1;
+Lreturn:
+  writer_closed > 0 ? signal_reader(WRITER_CLOSE) : signal_reader(WRITER_ABORT);
+  ink_mutex_release(mutex);
+}
+CacheWriterEntry::CacheWriterEntry():
+    mutex(0), writer(0), skip(0), total_len(0), doc_len(-1),
+    writer_closed(0), header_only_update(false), not_rww(true), no_data(true) {
+  key = zero_key;
+  earliest_key = zero_key;
+}
+
+void
+CacheWriterEntry::free() {
+  ink_assert(!sq_readers.head);
+  mutex = NULL;
+  key = zero_key;
+  blocks.clear();
+  alternate.destroy();
+  writer = NULL;
+  first_buf.clear();
+  cacheWriterEntryAllocator.free(this);
+}
+
+int
+CacheWriterEntry::read_write_frag(CacheVC *vc) {
+  ink_mutex_acquire(mutex);
+  if (writer_closed < 0) {
+    ink_mutex_release(mutex);
+    return -1;
+  }
+  if (writer_closed > 0) {
+    if ((int64_t)vc->doc_len != total_len) {
+      vc->doc_len = total_len;
+    }
+    ink_mutex_release(mutex);
+    return 0;
+  }
+
+  if ((writer_closed == 0 || vc->offset < (int64_t)vc->doc_len) && vc->offset >= total_len) {
+    vc->set_read_while_write_in_progress();
+    ink_assert(!vc->signal_link.next && !vc->signal_link.prev);
+    sq_readers.enqueue(vc);
+    ink_mutex_release(mutex);
+    return 1;
+  }
+  ink_mutex_release(mutex);
+  return 0;
+}
+int
+CacheWriterEntry::get_writer_data(CacheVC *vc)
+{
+  ink_debug_assert(this == vc->cw.m_ptr && vc->mutex->thread_holding == this_ethread());
+  ink_assert(!vc->is_io_in_progress());
+
+  int64_t offset = vc->offset;
+  int d_len = 1 << 21;
+
+  Ptr<IOBufferBlock> b = NULL;
+
+  ink_mutex_acquire(mutex);
+
+  if (!writer_closed) {
+    if (total_len <= offset) {
+      vc->set_read_while_write_in_progress();
+      ink_assert(!vc->signal_link.next && !vc->signal_link.prev);
+      sq_readers.enqueue(vc);
+      ink_mutex_release(mutex);
+      return 1;
+    }
+
+    if (total_len - offset < d_len)
+      d_len = total_len - offset;
+
+    b = clone_IOBufferBlockList(blocks, (skip + offset), d_len);
+    ink_mutex_release(mutex);
+
+    vc->vio.buffer.mbuf->append_block(b);
+    vc->vio.ndone += d_len;
+    vc->offset += d_len;
+    return 0;
+  } else if (writer_closed > 0) {
+    // writer closed successful
+    if (vc->doc_len != (uint64_t) total_len) {
+      // specail case
+      vc->doc_len = total_len;
+    }
+    ink_assert(total_len >= offset);
+    if (total_len - offset < d_len)
+      d_len = total_len - offset;
+    if (d_len)
+      b = clone_IOBufferBlockList(blocks, (skip + offset), d_len);
+
+    ink_mutex_release(mutex);
+
+    if (b) {
+      vc->vio.buffer.mbuf->append_block(b);
+      vc->vio.ndone += d_len;
+      vc->offset += d_len;
+    }
+    Debug("read_from_writer", "writer closed: expect %"PRId64", but only received %"PRId64"", vc->vio.nbytes, vc->vio.ndone);
+    return 0;
+  }
+
+  ink_mutex_release(mutex);
+  Debug("read_from_writer", "writer aborted: expect %"PRId64", but only received %"PRId64"", vc->vio.nbytes, vc->vio.ndone);
+  return -1;
+}
+
 #ifdef NON_MODULAR
 //----------------------------------------------------------------------------
 Action *
@@ -3763,292 +4074,5 @@ CacheProcessor::remove(Continuation *cont, URL *url, bool cluster_cache_local, C
 
   // Remove from local cache only.
   return caches[frag_type]->remove(cont, &md5, frag_type, true, false, const_cast<char*>(hostname), len);
-}
-
-void
-CacheWriterEntry::signal_reader(WriterSignalType type)
-{
-  CacheVC * vc = NULL;
-  Queue<CacheVC, CacheVC::Link_signal_link> q_tmp;
-  if (!sq_readers.head)
-    return;
-
-  switch (type) {
-  case WRITER_META: {
-    while ((vc = sq_readers.dequeue())) {
-      ink_debug_assert(vc->is_io_in_progress());
-      vc->initial_thread->schedule_imm(vc, CACHE_EVENT_META_FROM_WRITER);
-    }
-    break;
-  }
-  case WRITER_DATA: {
-    int64_t avail = r->read_avail();
-    while ((vc = sq_readers.dequeue())) {
-      ink_debug_assert(vc->is_io_in_progress());
-      if (!vc->closed && avail <= vc->offset) {
-        q_tmp.enqueue(vc);
-        continue;
-      }
-      vc->initial_thread->schedule_imm(vc, CACHE_EVENT_DATA_FROM_WRITER);
-    }
-    sq_readers.append(q_tmp);
-    break;
-  }
-  case WRITER_CLOSE: {
-    while ((vc = sq_readers.dequeue())) {
-      ink_debug_assert(vc->is_io_in_progress());
-      vc->initial_thread->schedule_imm(vc, CACHE_EVENT_WRITER_CLOSED);
-    }
-    break;
-  }
-  case WRITER_ABORT: {
-    while ((vc = sq_readers.dequeue())) {
-      ink_debug_assert(vc->is_io_in_progress());
-      vc->initial_thread->schedule_imm(vc, CACHE_EVENT_WRITER_ABORTED);
-    }
-    break;
-  }
-  default:
-    ink_assert(!"unexpected type");
-  }
-}
-
-void
-CacheWriterEntry::reserve_writer_head(CacheVC *vc)
-{
-  ink_debug_assert(vc == writer && vc->mutex->thread_holding == this_ethread());
-  ink_mutex_acquire(mutex);
-  first_buf = vc->first_buf;
-  ink_mutex_release(mutex);
-}
-void
-CacheWriterEntry::set_writer_meta(CacheVC *vc)
-{
-  ink_debug_assert(vc == writer && vc->mutex->thread_holding == this_ethread());
-  ink_mutex_acquire(mutex);
-  ink_assert(!alternate.valid() && doc_len == -1);
-//  if (vc->vio.nbytes == 0) {
-//    if (vc->f.update) {
-//      doc_len = vc->update_len;
-//      header_only_update = true;
-//    } else if (vc->f.force_empty) {
-//      doc_len = 0;
-//    } else {
-//      Warning("not header only update or empty doc but write no bytes!");
-//      ink_mutex_release(mutex);
-//      return;
-//    }
-//  } else
-  if (vc->vio.nbytes > cache_rww_max_doc_size) {
-    not_rww = true;
-  } else {
-    doc_len = vc->vio.nbytes;
-    if (vc->frag_type == CACHE_FRAG_TYPE_HTTP) {
-      alternate.copy(&vc->alternate);
-      alternate.object_size_set(doc_len);
-    }
-  }
-  signal_reader(WRITER_META);
-  ink_mutex_release(mutex);
-}
-int
-CacheWriterEntry::get_writer_meta(CacheVC *vc, bool *header_only)
-{
-  ink_debug_assert(this == vc->cw.m_ptr && vc->mutex->thread_holding == this_ethread());
-  ink_assert(!vc->is_io_in_progress());
-
-  CacheHTTPInfo tmp_alt;
-  int64_t nbytes = 0;
-
-  if (not_rww) {
-    vc->cw = NULL;
-    return -1;
-  }
-
-  ink_mutex_acquire(mutex);
-  if (not_rww) {
-    ink_mutex_release(mutex);
-    vc->cw = NULL;
-    return -1;
-  }
-  if (vc->frag_type == CACHE_FRAG_TYPE_HTTP) {
-    if (alternate.valid()) {
-      ink_debug_assert(doc_len >= 0);
-      if (writer_closed && doc_len != total_len && !header_only_update) {
-        Debug("read_from_writer", "writer aborted!");
-        ink_mutex_release(mutex);
-        vc->cw = NULL;
-        return -1;
-      }
-      tmp_alt.copy_shallow(&alternate);
-      nbytes = doc_len;
-      *header_only = header_only_update;
-      vc->first_buf = first_buf;
-      ink_mutex_release(mutex);
-    } else if (writer_closed || !vc->params || vc->params->max_rww_delay <= 0) {
-      ink_mutex_release(mutex);
-      vc->cw = NULL;
-      return -1;
-    } else {
-      // put my this in the list
-      ink_debug_assert(doc_len < 0);
-      vc->set_read_while_write_in_progress();
-      ink_assert(!vc->signal_link.next && !vc->signal_link.prev);
-      sq_readers.enqueue(vc);
-      ink_mutex_release(mutex);
-      VC_SCHED_RWW_WAIT_TIMEOUT(vc, vc->params->max_rww_delay);
-      return 1;
-    }
-    float Q = HttpTransactCache::calculate_quality_of_match(vc->params, &vc->request,
-        &tmp_alt.m_alt->m_request_hdr, &tmp_alt.m_alt->m_response_hdr);
-    if (Q > 0) {
-      vc->alternate.copy_shallow(&tmp_alt);
-      vc->doc_len = nbytes;
-      return 0;
-    } else {
-      Debug("read_from_writer", "alternate not matched!");
-      // writer not match the reader
-      // read from cache
-      vc->cw = NULL;
-      return -1;
-    }
-  } else {
-    *header_only = false;
-    if (writer_closed < 0) {
-      ink_mutex_release(mutex);
-      vc->cw = NULL;
-      return -1;
-    } else if (doc_len < 0) {
-      vc->set_read_while_write_in_progress();
-      ink_assert(!vc->signal_link.next && !vc->signal_link.prev);
-      sq_readers.enqueue(vc);
-      ink_mutex_release(mutex);
-      VC_SCHED_RWW_WAIT_TIMEOUT(vc, cache_config_rww_max_delay);
-      return 1;
-    }
-  }
-
-  vc->doc_len = doc_len;
-  ink_mutex_release(mutex);
-  return 0;
-}
-
-void
-CacheWriterEntry::set_writer_close(int close) {
-  if (writer_closed)
-    return;
-  ink_mutex_acquire(mutex);
-  if (close > 0) {
-    if (writer->frag_type == CACHE_FRAG_TYPE_HTTP) {
-      if (writer->alternate.valid()) {
-        if (!alternate.valid()) {
-          ink_assert(doc_len < 0);
-          alternate.copy(&writer->alternate);
-        }
-        if (writer->total_len > 0)
-          doc_len = writer->total_len;
-        else if (writer->f.update) {
-          doc_len = writer->update_len;
-          header_only_update = true;
-        } else if (writer->f.force_empty)
-          doc_len = 0;
-        else {
-          writer_closed = -1;
-          goto Lreturn;
-        }
-
-        alternate.object_size_set(doc_len);
-        writer_closed = 1;
-      } else {
-        writer_closed = -1;
-      }
-    } else {
-      doc_len = writer->total_len;
-      writer_closed = 1;
-    }
-  } else
-    writer_closed = -1;
-Lreturn:
-  writer_closed > 0 ? signal_reader(WRITER_CLOSE) : signal_reader(WRITER_ABORT);
-  ink_mutex_release(mutex);
-}
-CacheWriterEntry::CacheWriterEntry():
-    mutex(0), r(0), writer(0), doc_len(-1), total_len(0),
-    writer_closed(0), header_only_update(false), not_rww(true) {
-  key = zero_key;
-}
-
-void
-CacheWriterEntry::free() {
-  ink_assert(!sq_readers.head);
-  mutex = NULL;
-  key = zero_key;
-  buffer.clear();
-  alternate.destroy();
-  r = NULL;
-  writer = NULL;
-  first_buf.clear();
-  cacheWriterEntryAllocator.free(this);
-}
-
-int
-CacheWriterEntry::get_writer_data(CacheVC *vc)
-{
-  ink_debug_assert(this == vc->cw.m_ptr && vc->mutex->thread_holding == this_ethread());
-  ink_assert(!vc->is_io_in_progress());
-
-  int64_t offset = vc->length;
-  int d_len = 1 << 21;
-
-  Ptr<IOBufferBlock> b = NULL;
-
-  ink_mutex_acquire(mutex);
-
-  if (!writer_closed) {
-    if (total_len <= offset) {
-      vc->set_read_while_write_in_progress();
-      ink_assert(!vc->signal_link.next && !vc->signal_link.prev);
-      sq_readers.enqueue(vc);
-      ink_mutex_release(mutex);
-      return 1;
-    }
-
-    if (total_len - offset < d_len)
-      d_len = total_len - offset;
-
-    b = clone_IOBufferBlockList(r->get_current_block(), offset, d_len);
-    ink_mutex_release(mutex);
-
-    vc->vio.buffer.mbuf->append_block(b);
-    vc->vio.ndone += d_len;
-    vc->length += d_len;
-    return 0;
-  } else if (writer_closed > 0) {
-    // writer closed successful
-    if (vc->doc_len != (uint64_t) total_len) {
-      // specail case
-      vc->doc_len = total_len;
-    }
-    ink_assert(total_len >= offset);
-    if (total_len - offset < d_len)
-      d_len = total_len - offset;
-    if (d_len)
-      b = clone_IOBufferBlockList(r->get_current_block(), offset, d_len);
-
-    ink_mutex_release(mutex);
-
-    if (b) {
-      vc->vio.buffer.mbuf->append_block(b);
-      vc->vio.ndone += d_len;
-      vc->length += d_len;
-      return 0;
-    }
-    Debug("read_from_writer", "writer closed: expect %"PRId64", but only received %"PRId64"", vc->vio.nbytes, vc->vio.ndone);
-    return -1;
-  }
-
-  ink_mutex_release(mutex);
-  Debug("read_from_writer", "writer aborted: expect %"PRId64", but only received %"PRId64"", vc->vio.nbytes, vc->vio.ndone);
-  return -1;
 }
 #endif
