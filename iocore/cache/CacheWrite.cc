@@ -1251,6 +1251,8 @@ CacheVC::openWriteCloseDataDone(int event, Event *e)
     fragment++;
     write_pos += write_len;
     dir_insert(&key, vol, &dir);
+    if (cw && !cw->not_rww && cw->no_data)
+      cw->add_writer_length(write_len);
     blocks = iobufferblock_skip(blocks, &offset, &length, write_len);
     next_CacheKey(&key, &key);
     if (length) {
@@ -1346,6 +1348,8 @@ CacheVC::openWriteWriteDone(int event, Event *e)
     fragment++;
     write_pos += write_len;
     dir_insert(&key, vol, &dir);
+    if (cw && !cw->not_rww && cw->no_data)
+      cw->add_writer_length(write_len);
     DDebug("cache_insert", "WriteDone: %X, %X, %d", key.word(0), first_key.word(0), write_len);
     blocks = iobufferblock_skip(blocks, &offset, &length, write_len);
     next_CacheKey(&key, &key);
@@ -1387,7 +1391,7 @@ CacheVC::openWriteMain(int event, Event *e)
     offset = vio.buffer.reader()->start_offset;
   }
   if (avail > 0) {
-    if (!cw->not_rww)  cw->add_writer_data(vio.buffer.reader(), avail);
+    if (!cw->not_rww && !cw->no_data)  cw->add_writer_data(vio.buffer.reader()->block, vio.buffer.reader()->start_offset, avail);
     vio.buffer.reader()->consume(avail);
     vio.ndone += avail;
     total_len += avail;

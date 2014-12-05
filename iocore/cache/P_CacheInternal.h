@@ -575,18 +575,20 @@ CacheSignaler::mainEvent(int event, void *e) {
 
 struct CacheWriterEntry: public RefCountObj
 {
-  ink_mutex *mutex;
   CacheKey key; // for writer set
-  MIOBuffer buffer; // for writer set
-  LINK(CacheWriterEntry, link);
-  CacheHTTPInfo alternate; // for writer set
-  IOBufferReader *r;
+  CacheKey earliest_key; // for writer set
+  ink_mutex *mutex;
   CacheVC *writer; // backpointer to write_vc;
+  int64_t skip; // start offset of the blocks
+  int64_t total_len; // total length of the blocks or writen length
   int64_t doc_len;
-  int64_t total_len;
   int writer_closed;
   bool header_only_update;
-  bool not_rww;
+  bool not_rww; // once set, never change
+  bool no_data; // once set, never change
+  LINK(CacheWriterEntry, link);
+  CacheHTTPInfo alternate; // for writer set
+  Ptr<IOBufferBlock> blocks;
   Ptr<IOBufferData> first_buf;
   Queue<CacheVC, CacheVC::Link_signal_link> sq_readers; // reader for signal
   enum WriterSignalType {
@@ -599,16 +601,31 @@ struct CacheWriterEntry: public RefCountObj
 
   void reserve_writer_head(CacheVC *vc);
   void set_writer_meta(CacheVC *vc);
-  int get_writer_meta(CacheVC *vc, bool *header_only);
+  int get_writer_meta(CacheVC *vc, bool *header_only, bool *nd);
   int get_writer_data(CacheVC *vc);
-  void add_writer_data(IOBufferReader *reader, int64_t size) {
-    ink_debug_assert(reader->read_avail() >= size);
-    IOBufferBlock *b = iobufferblock_clone(reader->get_current_block(),
-        reader->start_offset, size);
-
+  int read_write_frag(CacheVC *vc);
+  bool writer_done()
+  {
+    bool result;
     ink_mutex_acquire(mutex);
-    buffer.append_block(b);
-    total_len += size;
+    result = (writer_closed != 0);
+    ink_mutex_release(mutex);
+    return result;
+  }
+  void add_writer_length(int64_t len) {
+    ink_mutex_acquire(mutex);
+    total_len += len;
+    signal_reader(WRITER_DATA);
+    ink_mutex_release(mutex);
+  }
+
+  void add_writer_data(IOBufferBlock *b, int64_t start_offset, int64_t len) {
+    ink_mutex_acquire(mutex);
+    if (blocks == NULL) {
+      blocks = b;
+      skip = start_offset;
+    }
+    total_len += len;
     signal_reader(WRITER_DATA);
     ink_mutex_release(mutex);
   }
@@ -745,7 +762,7 @@ free_CacheVC(CacheVC *cont)
   }
   if (cont->cw) {
     if (cont->vio.op == VIO::WRITE) {
-      cont->cw->set_writer_close(-1);
+      cont->cw->set_writer_close(cont->closed);
       cont->clear_entry(&writerTable);
     }
     cont->cw = NULL;
@@ -889,7 +906,8 @@ TS_INLINE int
 CacheVC::die()
 {
   if (vio.op == VIO::WRITE) {
-    cw->set_writer_close(closed);
+    if (!cw->no_data)
+      cw->set_writer_close(closed);
 #ifdef HTTP_CACHE
     if (f.update && total_len) {
       alternate.object_key_set(earliest_key);
@@ -1749,7 +1767,6 @@ CacheVC::add_entry(CacheWriterTable *table) {
     entry->key = first_key;
     entry->writer = this;
     entry->not_rww = !cache_config_read_while_writer;
-    entry->r = entry->buffer.alloc_reader();
     table->buckets[indx].writers.push(entry);
     cw = entry;
   }
