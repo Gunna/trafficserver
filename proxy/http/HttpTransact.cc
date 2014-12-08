@@ -2445,7 +2445,7 @@ HttpTransact::need_to_revalidate(State* s)
 
   ink_assert(s->cache_lookup_result == CACHE_LOOKUP_HIT_FRESH ||
              s->cache_lookup_result == CACHE_LOOKUP_HIT_WARNING || s->cache_lookup_result == CACHE_LOOKUP_HIT_STALE);
-  if (s->cache_lookup_result == CACHE_LOOKUP_HIT_STALE &&
+  if (s->cache_lookup_result == CACHE_LOOKUP_HIT_STALE && !s->cache_info.is_read_from_writer &&
       s->api_update_cached_object != HttpTransact::UPDATE_CACHED_OBJECT_CONTINUE) {
     needs_revalidate = true;
   } else
