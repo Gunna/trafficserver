@@ -737,6 +737,7 @@ public:
     int lookup_count;
     int remove_result;
     bool is_ram_cache_hit;
+    bool is_read_from_writer;
 
     _CacheLookupInfo()
       : action(CACHE_DO_UNDEFINED),
@@ -756,7 +757,8 @@ public:
         open_read_retries(0),
         open_write_retries(0), write_lock_state(CACHE_WL_INIT), lookup_count(0),
         remove_result(0),
-        is_ram_cache_hit(false)
+        is_ram_cache_hit(false),
+        is_read_from_writer(false)
     { }
   } CacheLookupInfo;
 
