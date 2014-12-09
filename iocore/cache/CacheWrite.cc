@@ -1100,6 +1100,13 @@ CacheVC::openWriteCloseDir(int event, Event *e)
   NOWARN_UNUSED(event);
 
   cancel_trigger();
+
+  if (vio.op == VIO::WRITE && cw) {
+    cw->set_writer_close(closed);
+    clear_entry(&writerTable);
+    cw = NULL;
+  }
+
   {
     CACHE_TRY_LOCK(lock, vol->mutex, mutex->thread_holding);
     if (!lock) {
