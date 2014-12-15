@@ -160,6 +160,12 @@ header files, and Apache httpd style module build system.
 %attr(0644,root,root) %{_libdir}/trafficserver/*.so
 
 %changelog
+* Mon Dec 15 2014 <weijin@apache.org> - 3.2.0-5.20
+- big file read from writer improved
+- stale document not revalidate if read from writer
+- real stats roll file in directory
+- bugfix of api log operation
+
 * Mon Nov 26 2012 <zym@apache.org> - 3.2.0-2.0
 - first abs version
 
