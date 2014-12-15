@@ -397,9 +397,14 @@ public:
 inline int LogObjectManager::roll_files(long time_now)
 {
     int num_rolled = 0;
-    for (size_t i=0; i < _numObjects; i++) {
+    for (size_t i = 0; i < _numObjects; i++) {
       num_rolled += _objects[i]->roll_files(time_now);
     }
+    ACQUIRE_API_MUTEX("A LogObjectManager::roll_files");
+    for (size_t i = 0; i< _numAPIobjects; i++) {
+      num_rolled += _APIobjects[i]->roll_files(time_now);
+    }
+    RELEASE_API_MUTEX("R LogObjectManager::roll_files");
     return num_rolled;
 };
 
@@ -409,6 +414,11 @@ LogObjectManager::display(FILE * str)
   for (size_t i = 0; i < _numObjects; i++) {
     _objects[i]->display(str);
   }
+  ACQUIRE_API_MUTEX("A LogObjectManager::display");
+  for (unsigned i = 0; i < this->_numAPIobjects; i++) {
+    _APIobjects[i]->display(str);
+  }
+  RELEASE_API_MUTEX("R LogObjectManager::display");
 }
 
 inline LogObject *

@@ -1164,9 +1164,11 @@ LogObjectManager::check_buffer_expiration(long time_now)
   for (i = 0; i < _numObjects; i++) {
     _objects[i]->check_buffer_expiration(time_now);
   }
+  ACQUIRE_API_MUTEX("A LogObjectManager::check_buffer_expiration");
   for (i = 0; i < _numAPIobjects; i++) {
     _APIobjects[i]->check_buffer_expiration(time_now);
   }
+  RELEASE_API_MUTEX("R LogObjectManager::check_buffer_expiration");
 }
 
 size_t LogObjectManager::preproc_buffers(int idx)
@@ -1178,9 +1180,11 @@ size_t LogObjectManager::preproc_buffers(int idx)
     buffers_preproced += _objects[i]->preproc_buffers(idx);
   }
 
+  ACQUIRE_API_MUTEX("A LogObjectManager::preproc_buffers");
   for (i = 0; i < _numAPIobjects; i++) {
       buffers_preproced += _APIobjects[i]->preproc_buffers(idx);
   }
+  RELEASE_API_MUTEX("R LogObjectManager::preproc_buffers");
   return buffers_preproced;
 }
 
