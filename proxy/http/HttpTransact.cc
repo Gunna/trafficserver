@@ -7223,10 +7223,9 @@ HttpTransact::handle_response_keep_alive_headers(State* s, HTTPVersion ver, HTTP
          // if we receive a 304, we will serve the client from the
          // cache and thus do not need chunked encoding.
          s->hdr_info.server_response.status_get() != HTTP_STATUS_NOT_MODIFIED &&
-         (s->current.server->transfer_encoding == HttpTransact::CHUNKED_ENCODING ||
           // we can use chunked encoding if we cannot trust the content
           // length (e.g. no Content-Length and Connection:close in HTTP/1.1 responses)
-          s->hdr_info.trust_response_cl == false)) ||
+          s->hdr_info.trust_response_cl == false) ||
          // handle serve from cache (read-while-write) case
          (s->source == SOURCE_CACHE && s->hdr_info.trust_response_cl == false) ||
          // any transform will potentially alter the content length. try chunking if possible
