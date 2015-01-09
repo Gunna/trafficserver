@@ -1551,10 +1551,9 @@ Lagain:
     }
 
 Lcollision:
-    int if_writers = ((uintptr_t) info == CACHE_ALLOW_MULTIPLE_WRITES);
     if (!od) {
       if ((err = vol->open_write(
-                this, if_writers, cache_config_http_max_alts > 1 ? cache_config_http_max_alts : 0)) > 0)
+                this, !f.update, cache_config_http_max_alts > 1 ? cache_config_http_max_alts : 0)) > 0)
         goto Lfailure;
       if (od->has_multiple_writers()) {
         MUTEX_RELEASE(lock);
@@ -1669,7 +1668,7 @@ Cache::open_write(Continuation *cont, CacheKey *key, CacheFragType frag_type,
   c->pin_in_cache = (uint32_t) apin_in_cache;
   c->frag_len = target_fragment_size();;
 
-  if ((res = c->add_entry(&writerTable) ? 0 : ECACHE_DOC_BUSY) > 0
+  if ((res = c->add_entry(&writerTable, 1) ? 0 : ECACHE_DOC_BUSY) > 0
       || ((res = c->vol->open_write_lock(c, false, 1)) > 0)) {
     // document currently being written, abort
     CACHE_INCREMENT_DYN_STAT(c->base_stat + CACHE_STAT_FAILURE);
@@ -1710,7 +1709,6 @@ Cache::open_write(Continuation *cont, CacheKey *key, CacheHTTPInfo *info, time_t
 
   ink_assert(caches[type] == this);
   intptr_t err = 0;
-  int if_writers = (uintptr_t) info == CACHE_ALLOW_MULTIPLE_WRITES;
   CacheVC *c = new_CacheVC(cont);
   ProxyMutex *mutex = cont->mutex;
   c->vio.op = VIO::WRITE;
@@ -1732,7 +1730,7 @@ Cache::open_write(Continuation *cont, CacheKey *key, CacheHTTPInfo *info, time_t
   c->vol = key_to_vol(key, hostname, host_len);
   Vol *vol = c->vol;
   c->info = info;
-  if (c->info && (uintptr_t) info != CACHE_ALLOW_MULTIPLE_WRITES) {
+  if (c->info) {
     /*
        Update has the following code paths :
        a) Update alternate header only :
@@ -1773,7 +1771,7 @@ Cache::open_write(Continuation *cont, CacheKey *key, CacheHTTPInfo *info, time_t
   CACHE_INCREMENT_DYN_STAT(c->base_stat + CACHE_STAT_ACTIVE);
   c->pin_in_cache = (uint32_t) apin_in_cache;
 
-  if (c->update_len == INT64_MAX || !c->add_entry(&writerTable)) {
+  if (c->update_len == INT64_MAX || !c->add_entry(&writerTable, cache_config_http_max_alts)) {
     err = ECACHE_DOC_BUSY;
     goto Lfailure;
   }
@@ -1781,7 +1779,7 @@ Cache::open_write(Continuation *cont, CacheKey *key, CacheHTTPInfo *info, time_t
   {
     CACHE_TRY_LOCK(lock, c->vol->mutex, cont->mutex->thread_holding);
     if (lock) {
-      if ((err = c->vol->open_write(c, if_writers,
+      if ((err = c->vol->open_write(c, !c->f.update,
                                      cache_config_http_max_alts > 1 ? cache_config_http_max_alts : 0)) > 0)
         goto Lfailure;
       // If there are multiple writers, then this one cannot be an update.

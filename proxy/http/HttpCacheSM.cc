@@ -329,8 +329,6 @@ HttpCacheSM::open_write(URL * url, HTTPHdr * request, CacheHTTPInfo * old_info, 
                                                     master_sm->t_state.cache_control.cluster_cache_local ||
                                                     master_sm->t_state.cop_test_page,
                                                     request,
-                                                    // INKqa11166
-                                                    allow_multiple ? (CacheHTTPInfo *) CACHE_ALLOW_MULTIPLE_WRITES :
                                                     old_info,
                                                     pin_in_cache);
 

@@ -131,6 +131,7 @@ ClassAllocator<CacheRemoveCont> cacheRemoveContAllocator("cacheRemoveCont");
 ClassAllocator<EvacuationKey> evacuationKeyAllocator("evacuationKey");
 ClassAllocator<CacheSignaler> cacheSignalerAllocator("cacheSignalerAllocator");
 ClassAllocator<CacheWriterEntry> cacheWriterEntryAllocator("cacheWriterEntryAllocator");
+ClassAllocator<CacheWriterList> cacheWriterListAllocator("cacheWriterListAllocator");
 #ifdef SSD_CACHE
 ClassAllocator<MigrateToSSD> migrateToSSDAllocator("migrateToSSD");
 #endif
@@ -3909,9 +3910,8 @@ Lreturn:
   ink_mutex_release(mutex);
 }
 CacheWriterEntry::CacheWriterEntry():
-    mutex(0), writer(0), skip(0), total_len(0), doc_len(-1),
+    mutex(0), w_list(0), writer(0), skip(0), total_len(0), doc_len(-1),
     writer_closed(0), header_only_update(false), not_rww(true), no_data(true) {
-  key = zero_key;
   earliest_key = zero_key;
 }
 
@@ -3919,7 +3919,7 @@ void
 CacheWriterEntry::free() {
   ink_assert(!sq_readers.head);
   mutex = NULL;
-  key = zero_key;
+  w_list = NULL;
   blocks.clear();
   alternate.destroy();
   writer = NULL;

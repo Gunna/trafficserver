@@ -227,13 +227,10 @@ Cluster_write(Continuation * cont, int expected_size,
       flen = op_to_sizeof_fixedlen_msg(CACHE_OPEN_WRITE_LONG);
       len = 0;
 
-      if (old_info == (CacheHTTPInfo *) CACHE_ALLOW_MULTIPLE_WRITES) {
-        old_info = 0;
-        allow_multiple_writes = 1;
-      }
       if (old_info) {
         len += old_info->marshal_length();
-      }
+      } else
+        allow_multiple_writes = 1;
       len += url_hlen;
 
       if ((flen + len) > DEFAULT_MAX_BUFFER_SIZE)       // Bound marshalled data

@@ -255,7 +255,7 @@ struct CacheVC: public CacheVConnection
   CacheVC();
 
 //  bool get_entry(CacheWriterTable *table);
-  bool add_entry(CacheWriterTable *table);
+  bool add_entry(CacheWriterTable *table, int max_writers = 1);
   void clear_entry(CacheWriterTable *table);
 
   VIO *do_io_read(Continuation *c, int64_t nbytes, MIOBuffer *buf);
@@ -393,7 +393,7 @@ struct CacheVC: public CacheVConnection
     return f.read_from_writer_called;
   }
   virtual bool is_pread_capable() {
-    return !f.read_from_writer_called;
+    return true;
   }
 
   // offsets from the base stat
@@ -573,11 +573,13 @@ CacheSignaler::mainEvent(int event, void *e) {
   return EVENT_DONE;
 }
 
+struct CacheWriterList;
+
 struct CacheWriterEntry: public RefCountObj
 {
-  CacheKey key; // for writer set
   CacheKey earliest_key; // for writer set
   ink_mutex *mutex;
+  CacheWriterList *w_list;
   CacheVC *writer; // backpointer to write_vc;
   int64_t skip; // start offset of the blocks
   int64_t total_len; // total length of the blocks or writen length
@@ -650,9 +652,19 @@ struct CacheWriterEntry: public RefCountObj
 extern ClassAllocator<CacheWriterEntry> cacheWriterEntryAllocator;
 
 #define CACHE_WRITER_BUCKET_SIZE  8191
+struct CacheWriterList
+{
+  CacheKey key; // the first writer set
+  LINK(CacheWriterList, link);
+  DLL<CacheWriterEntry> writers;
+  int num_writers;
+};
+
+extern ClassAllocator<CacheWriterList> cacheWriterListAllocator;
+
 struct CacheWriterBucket
 {
-  DLL<CacheWriterEntry> writers;
+  DLL<CacheWriterList> w_bucket;
   ink_mutex the_mutex;
   CacheWriterBucket()
   {
@@ -665,12 +677,28 @@ struct CacheWriterTable
   CacheWriterBucket buckets[CACHE_WRITER_BUCKET_SIZE];
   bool probe_entry(INK_MD5 *key, Ptr<CacheWriterEntry> *_ref) {
     int indx = key->word(1) % CACHE_WRITER_BUCKET_SIZE;
+    CacheWriterList *l = NULL;
+    ink_hrtime start_time = ink_get_hrtime();
     ink_mutex *mutex = &buckets[indx].the_mutex;
 
     ink_mutex_acquire(mutex);
-    for (CacheWriterEntry *entry = buckets[indx].writers.head; entry;
-        entry = entry->link.next) {
-      if (*key == entry->key) {
+
+    for (l = buckets[indx].w_bucket.head; l; l = l->link.next) {
+      if (*key == l->key) {
+        break;
+      }
+    }
+
+    if (l == NULL) {
+      ink_mutex_release(mutex);
+      *_ref = NULL;
+      return false;
+    }
+
+    // select the best writer
+    ink_assert(l->num_writers > 0);
+    for (CacheWriterEntry *entry = l->writers.head; entry; entry = entry->link.next) {
+      if (entry->writer->start_time <= start_time && entry->writer_closed >= 0) {
         *_ref = entry;
         ink_mutex_release(mutex);
         return true;
@@ -1748,31 +1776,41 @@ LINK_DEFINITION(CacheVC, opendir_link)
 //}
 
 inline bool
-CacheVC::add_entry(CacheWriterTable *table) {
+CacheVC::add_entry(CacheWriterTable *table, int max_writers) {
   int indx = first_key.word(1) % CACHE_WRITER_BUCKET_SIZE;
   ink_mutex *mutex = &table->buckets[indx].the_mutex;
-  bool found = false;
+  CacheWriterList *w_list;
 
   ink_mutex_acquire(mutex);
 
-  for (CacheWriterEntry *entry = table->buckets[indx].writers.head; entry; entry = entry->link.next) {
-    if (first_key == entry->key) {
-      found = true;
+  for (w_list = table->buckets[indx].w_bucket.head; w_list; w_list = w_list->link.next) {
+    if (first_key == w_list->key) {
+      if (f.update || w_list->num_writers >= max_writers) {
+        ink_mutex_release(mutex);
+        return false;
+      }
       break;
     }
   }
-  if (!found) {
-    CacheWriterEntry *entry = cacheWriterEntryAllocator.alloc();
-    entry->mutex = mutex;
-    entry->key = first_key;
-    entry->writer = this;
-    entry->not_rww = !cache_config_read_while_writer;
-    table->buckets[indx].writers.push(entry);
-    cw = entry;
+
+  if (!w_list) {
+    w_list = cacheWriterListAllocator.alloc();
+    w_list->key = first_key;
+    w_list->num_writers = 0;
+    table->buckets[indx].w_bucket.push(w_list);
   }
 
+  CacheWriterEntry *entry = cacheWriterEntryAllocator.alloc();
+  entry->mutex = mutex;
+  entry->writer = this;
+  entry->w_list = w_list;
+  entry->not_rww = !cache_config_read_while_writer;
+  w_list->writers.push(entry);
+  w_list->num_writers++;
+  cw = entry;
+
   ink_mutex_release(mutex);
-  return !found;
+  return true;
 }
 
 inline void
@@ -1783,7 +1821,12 @@ CacheVC::clear_entry(CacheWriterTable *table) {
   ink_assert(cw && cw->writer == this && mutex == cw->mutex);
 
   ink_mutex_acquire(cw->mutex);
-  table->buckets[indx].writers.remove(cw);
+  cw->w_list->writers.remove(cw);
+  if (--cw->w_list->num_writers == 0) {
+    table->buckets[indx].w_bucket.remove(cw->w_list);
+    cacheWriterListAllocator.free(cw->w_list);
+  }
+  cw->w_list = NULL;
   ink_mutex_release(cw->mutex);
 
 }

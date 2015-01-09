@@ -123,7 +123,6 @@ enum CacheFragType
 };
 
 #define CacheKey INK_MD5
-#define CACHE_ALLOW_MULTIPLE_WRITES 1
 #define CACHE_EXPECTED_SIZE 32768
 
 /* uses of the CacheKey

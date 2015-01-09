@@ -1854,10 +1854,7 @@ cache_op_ClusterFunction(ClusterSession cs, void *context, void *d)
       } else {
         p = (const char *) 0;
       }
-      if (c->cfl_flags & CFL_ALLOW_MULTIPLE_WRITES) {
-        ink_assert(!ci);
-        ci = (CacheHTTPInfo *) CACHE_ALLOW_MULTIPLE_WRITES;
-      }
+
       moi_len -= res;
       p += res;
 
