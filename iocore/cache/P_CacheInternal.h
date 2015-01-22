@@ -642,7 +642,6 @@ struct CacheWriterEntry: public RefCountObj
     result = sq_readers.in(vc);
     if (result) {
       sq_readers.remove(vc);
-      vc->cw = NULL;
     }
     ink_mutex_release(mutex);
     return result;
