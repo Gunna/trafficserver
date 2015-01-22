@@ -371,6 +371,7 @@ CacheVC::handleReadFromWriter(int event, Event * e)
     if (event != EVENT_IMMEDIATE && cw->in_and_remove(this)) {
       Debug("read_from_writer", "delay too long, give up read from writer.");
       // rww delay timeout, just read from cache
+      cw = NULL;
       SET_HANDLER(&CacheVC::openReadStartHead);
       return openReadStartHead(EVENT_IMMEDIATE, 0);
     }
