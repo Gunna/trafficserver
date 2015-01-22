@@ -8361,6 +8361,11 @@ HttpTransact::build_error_response(State *s, HTTPStatus status_code, const char 
   // get the url --- remember this is dynamically allocated //
   ////////////////////////////////////////////////////////////
   if (s->hdr_info.client_request.valid()) {
+    if (!s->url_remap_success &&
+        !s->http_config_param->reverse_proxy_enabled) {
+      if (!s->hdr_info.client_request.url_get()->m_url_impl->m_ptr_host)
+        s->hdr_info.client_request.set_url_target_from_host_field();
+    }
     url = s->hdr_info.client_request.url_get();
     url_string = url ? url->string_get(&s->arena) : NULL;
   } else {
