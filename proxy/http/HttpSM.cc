@@ -2225,12 +2225,14 @@ HttpSM::state_hostdb_lookup(int event, void *data)
 
     char *host_name = t_state.dns_info.srv_lookup_sucess ? t_state.dns_info.srv_hostname : t_state.dns_info.lookup_name;
     int server_port = t_state.dns_info.srv_lookup_sucess ? t_state.dns_info.srv_port : t_state.server_info.port;
+    HostDBMark mark = get_resolv_type();
 
     Action *dns_lookup_action_handle = hostDBProcessor.getbyname_imm(this,
                                                                    (process_hostdb_info_pfn) & HttpSM::
                                                                    process_hostdb_info,
                                                                    host_name, 0,
                                                                    server_port,
+                                                                   mark,
                                                                    ((t_state.cache_info.directives.
                                                                      does_client_permit_dns_storing) ? HostDBProcessor::
                                                                     HOSTDB_DO_NOT_FORCE_DNS : HostDBProcessor::
@@ -3953,12 +3955,14 @@ HttpSM::do_hostdb_lookup()
     } else {
       char *host_name = t_state.dns_info.srv_lookup_sucess ? t_state.dns_info.srv_hostname : t_state.dns_info.lookup_name;
       int server_port = t_state.dns_info.srv_lookup_sucess ? t_state.dns_info.srv_port : t_state.server_info.port;
+      HostDBMark mark = get_resolv_type();
 
       Action *dns_lookup_action_handle = hostDBProcessor.getbyname_imm(this,
                                                                  (process_hostdb_info_pfn) & HttpSM::
                                                                  process_hostdb_info,
                                                                  host_name, 0,
                                                                  server_port,
+                                                                 mark,
                                                                  ((t_state.cache_info.directives.
                                                                  does_client_permit_dns_storing) ? HostDBProcessor::
                                                                  HOSTDB_DO_NOT_FORCE_DNS : HostDBProcessor::
@@ -3980,6 +3984,7 @@ HttpSM::do_hostdb_lookup()
     // If there is not a current server, we must be looking up the origin
     //  server at the beginning of the transaction
     int server_port = t_state.current.server ? t_state.current.server->port : t_state.server_info.port;
+    HostDBMark mark = get_resolv_type();
 
     if (t_state.api_txn_dns_timeout_value != -1) {
       DebugSM("http_timeout", "beginning DNS lookup. allowing %d mseconds for DNS lookup",
@@ -3991,6 +3996,7 @@ HttpSM::do_hostdb_lookup()
                                                                      process_hostdb_info,
                                                                      t_state.dns_info.lookup_name, 0,
                                                                      server_port,
+                                                                     mark,
                                                                      ((t_state.cache_info.directives.
                                                                        does_client_permit_dns_storing) ?
                                                                       HostDBProcessor::
@@ -7535,4 +7541,16 @@ HttpSM::is_os_connections_high()
   int os_conns = ConnectionCount::getInstance()->getCount(host_name, host_len);
 
   return (os_conns * 4 > t_state.txn_conf->origin_max_connections * 3);
+}
+
+HostDBMark
+HttpSM::get_resolv_type()
+{
+  if (t_state.dns_info.resolv_type == 0) {
+    if (ua_session->get_netvc()->get_remote_addr()->sa_family != AF_INET6)
+      return HOSTDB_IPV4;
+    return HOSTDB_IPV6;
+  } if (t_state.dns_info.resolv_type != 2)
+    return HOSTDB_IPV4;
+  return HOSTDB_IPV6;
 }

@@ -8073,6 +8073,10 @@ _conf_to_memberp(TSOverridableConfigKey conf,
     typ = OVERRIDABLE_TYPE_INT;
     ret = &overridableHttpConfig->max_cache_open_read_retries;
     break;
+  case TS_CONFIG_DNS_RESOLV_TYPE:
+    typ = OVERRIDABLE_TYPE_INT;
+    ret = &overridableHttpConfig->dns_resolv_type;
+    break;
 
     // This helps avoiding compiler warnings, yet detect unhandled enum members.
   case TS_CONFIG_NULL:
@@ -8303,6 +8307,8 @@ TSHttpTxnConfigFind(const char* name, int length, TSOverridableConfigKey *conf, 
   case 28:
     if (!strncmp(name, "proxy.config.http.cache.http", length))
       cnf = TS_CONFIG_HTTP_CACHE_HTTP;
+    else if (!strncmp(name, "proxy.config.dns.resolv_type", length))
+      cnf = TS_CONFIG_DNS_RESOLV_TYPE;
     break;
 
   case 30:

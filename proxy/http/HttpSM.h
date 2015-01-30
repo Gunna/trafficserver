@@ -530,6 +530,7 @@ public:
   bool set_server_session_private(bool private_session);
   bool is_private();
   bool is_os_connections_high();
+  HostDBMark get_resolv_type();
 };
 
 //Function to get the cache_sm object - YTS Team, yamsat

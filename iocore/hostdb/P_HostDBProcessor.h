@@ -61,7 +61,7 @@ inline unsigned int HOSTDB_CLIENT_IP_HASH(
 #define CONFIGURATION_HISTORY_PROBE_DEPTH   1
 
 // Bump this any time hostdb format is changed
-#define HOST_DB_CACHE_MAJOR_VERSION         3
+#define HOST_DB_CACHE_MAJOR_VERSION         4
 #define HOST_DB_CACHE_MINOR_VERSION         1
 // 2.1 : IPv6
 
@@ -563,7 +563,7 @@ struct HostDBContinuation: public Continuation
   Action action;
   IpEndpoint ip;
   unsigned int ttl;
-  bool is_srv_lookup;
+  HostDBMark db_mark;
   int dns_lookup_timeout;
   INK_MD5 md5;
   Event *timeout;
@@ -595,11 +595,11 @@ struct HostDBContinuation: public Continuation
   void do_dns();
   bool is_byname()
   {
-    return ((*name && !is_srv_lookup) ? true : false);
+    return (*name && (db_mark != HOSTDB_SRV)) ? true : false;
   }
   bool is_srv()
   {
-    return ((*name && is_srv_lookup) ? true : false);
+    return (*name && (db_mark == HOSTDB_SRV)) ? true : false;
   }
   HostDBInfo *lookup_done(sockaddr const* aip, char *aname, bool round_robin, unsigned int attl, SRVHosts * s = NULL);
   bool do_get_response(Event * e);
@@ -614,13 +614,12 @@ struct HostDBContinuation: public Continuation
   HostDBInfo *insert(unsigned int attl);
 
   void init(const char *hostname, int len, sockaddr const* ip, INK_MD5 & amd5,
-            Continuation * cont, void *pDS = 0, bool is_srv = false, int timeout = 0, const char *target = NULL);
+            Continuation * cont, void *pDS = 0, HostDBMark mark = HOSTDB_IPV4, int timeout = 0, const char *target = NULL);
   int make_get_message(char *buf, int len);
   int make_put_message(HostDBInfo * r, Continuation * c, char *buf, int len);
 
 HostDBContinuation():
-  Continuation(NULL), ttl(0),
-    is_srv_lookup(false), dns_lookup_timeout(0),
+  Continuation(NULL), ttl(0), dns_lookup_timeout(0),
     timeout(0), from(0),
     from_cont(0), probe_depth(0), namelen(0), missing(false), force_dns(false), round_robin(false) {
     memset(&ip, 0, sizeof ip);

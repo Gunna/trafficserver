@@ -435,7 +435,7 @@ void
 HostDBContinuation::init(
   const char *hostname, int len,
   sockaddr const* aip,
-  INK_MD5 & amd5, Continuation * cont, void *pDS, bool is_srv, int timeout, const char *t
+  INK_MD5 & amd5, Continuation * cont, void *pDS, HostDBMark mark, int timeout, const char *t
 ) {
   if (hostname) {
     memcpy(name, hostname, len);
@@ -449,7 +449,7 @@ HostDBContinuation::init(
     target[0] = '\0';
   dns_lookup_timeout = timeout;
   namelen = len;
-  is_srv_lookup = is_srv;
+  db_mark = mark;
   ats_ip_copy(&ip.sa, aip);
   md5 = amd5;
   mutex = hostDB.lock_for_bucket((int) (fold_md5(md5) % hostDB.buckets));
@@ -464,7 +464,7 @@ HostDBContinuation::init(
 
 
 void
-make_md5(INK_MD5 & md5, const char *hostname, int len, int port, char *pDNSServers, int srv)
+make_md5(INK_MD5 & md5, const char *hostname, int len, int port, char *pDNSServers, HostDBMark mark)
 {
 #ifdef USE_MMH
   MMH_CTX ctx;
@@ -473,7 +473,7 @@ make_md5(INK_MD5 & md5, const char *hostname, int len, int port, char *pDNSServe
   unsigned short p = port;
   p = htons(p);
   ink_code_incr_MMH_update(&ctx, (char *) &p, 2);
-  ink_code_incr_MMH_update(&ctx, (char *) &srv, 4);     /* FIXME: check this */
+  ink_code_incr_MMH_update(&ctx, (char *) &mark, 4);     /* FIXME: check this */
   if (pDNSServers)
     ink_code_incr_MMH_update(&ctx, pDNSServers, strlen(pDNSServers));
   ink_code_incr_MMH_final((char *) &md5, &ctx);
@@ -492,10 +492,11 @@ make_md5(INK_MD5 & md5, const char *hostname, int len, int port, char *pDNSServe
 }
 
 static bool
-reply_to_cont(Continuation * cont, HostDBInfo * ar, bool is_srv = false)
+reply_to_cont(Continuation * cont, HostDBInfo * ar, HostDBMark mark = HOSTDB_IPV4)
 {
   const char *reason = "none";
   HostDBInfo *r = ar;
+  bool is_srv = mark == HOSTDB_SRV;
 
   if (r == NULL || r->is_srv != is_srv || r->failed()) {
     cont->handleEvent(is_srv ? EVENT_SRV_LOOKUP : EVENT_HOST_DB_LOOKUP, NULL);
@@ -541,8 +542,7 @@ Ldelete:
 
 
 HostDBInfo *
-probe(ProxyMutex *mutex, INK_MD5 & md5, const char *hostname, int len, sockaddr const* ip, void *pDS, bool ignore_timeout,
-      bool is_srv_lookup)
+probe(ProxyMutex *mutex, INK_MD5 & md5, const char *hostname, int len, sockaddr const* ip, void *pDS, bool ignore_timeout, HostDBMark mark)
 {
   ink_debug_assert(this_ethread() == hostDB.lock_for_bucket((int) (fold_md5(md5) % hostDB.buckets))->thread_holding);
   if (hostdb_enable) {
@@ -591,7 +591,7 @@ probe(ProxyMutex *mutex, INK_MD5 & md5, const char *hostname, int len, sockaddr 
         r->refresh_ip();
         if (!is_dotted_form_hostname(hostname)) {
           HostDBContinuation *c = hostDBContAllocator.alloc();
-          c->init(hostname, len, ip, md5, NULL, pDS, is_srv_lookup, 0);
+          c->init(hostname, len, ip, md5, NULL, pDS, mark, 0);
           c->do_dns();
         }
       }
@@ -643,7 +643,7 @@ HostDBContinuation::insert(unsigned int attl)
 //
 Action *
 HostDBProcessor::getby(Continuation * cont,
-                       const char *hostname, int len, sockaddr const* ip, bool aforce_dns, int dns_lookup_timeout)
+                       const char *hostname, int len, sockaddr const* ip, bool aforce_dns, HostDBMark mark, int dns_lookup_timeout)
 {
   INK_MD5 md5;
   char *pServerLine = 0;
@@ -685,7 +685,7 @@ HostDBProcessor::getby(Continuation * cont,
   if (hostname) {
     if (!len)
       len = strlen(hostname);
-    make_md5(md5, hostname, len, port, pServerLine);
+    make_md5(md5, hostname, len, port, pServerLine, mark);
   } else {
     // INK_MD5 the ip, pad on both sizes with 0's
     // so that it does not intersect the string space
@@ -712,7 +712,7 @@ HostDBProcessor::getby(Continuation * cont,
     // If we can get the lock and a level 1 probe succeeds, return
     //
     if (lock && lock2) {
-      HostDBInfo *r = probe(bmutex, md5, hostname, len, ip, pDS);
+      HostDBInfo *r = probe(bmutex, md5, hostname, len, ip, pDS, false, mark);
       if (r) {
         Debug("hostdb", "immediate answer for %s",
           hostname ? hostname 
@@ -735,7 +735,7 @@ Lretry:
   // Otherwise, create a continuation to do a deeper probe in the background
   //
   HostDBContinuation *c = hostDBContAllocator.alloc();
-  c->init(hostname, len, ip, md5, cont, pDS, false, dns_lookup_timeout);
+  c->init(hostname, len, ip, md5, cont, pDS, mark, dns_lookup_timeout);
   c->action = cont;
   c->force_dns = aforce_dns;
   SET_CONTINUATION_HANDLER(c, (HostDBContHandler) & HostDBContinuation::probeEvent);
@@ -785,6 +785,7 @@ HostDBProcessor::getSRVbyname_imm(Continuation * cont, process_srv_info_pfn proc
   bool force_dns = false;
   EThread *thread = cont->mutex->thread_holding;
   ProxyMutex *mutex = thread->mutex;
+  HostDBMark mark = HOSTDB_SRV;
 
   if (flags & HOSTDB_FORCE_DNS_ALWAYS)
     force_dns = true;
@@ -810,7 +811,7 @@ HostDBProcessor::getSRVbyname_imm(Continuation * cont, process_srv_info_pfn proc
   if (!len)
     len = strlen(hostname);
 
-  make_md5(md5, hostname, len, port, 0, 1);
+  make_md5(md5, hostname, len, port, 0, mark);
 
   // Attempt to find the result in-line, for level 1 hits
   if (!force_dns) {
@@ -820,7 +821,7 @@ HostDBProcessor::getSRVbyname_imm(Continuation * cont, process_srv_info_pfn proc
 
     // If we can get the lock and a level 1 probe succeeds, return
     if (lock) {
-      HostDBInfo *r = probe(bucket_mutex, md5, hostname, len, ats_ip_sa_cast(&ip), pDS, false, true);
+      HostDBInfo *r = probe(bucket_mutex, md5, hostname, len, ats_ip_sa_cast(&ip), pDS, false, mark);
       if (r) {
         Debug("hostdb", "immediate SRV answer for %s from hostdb", hostname);
         Debug("dns_srv", "immediate SRV answer for %s from hostdb", hostname);
@@ -835,7 +836,7 @@ HostDBProcessor::getSRVbyname_imm(Continuation * cont, process_srv_info_pfn proc
 
   // Otherwise, create a continuation to do a deeper probe in the background
   HostDBContinuation *c = hostDBContAllocator.alloc();
-  c->init(hostname, len, ats_ip_sa_cast(&ip), md5, cont, pDS, true, dns_lookup_timeout);
+  c->init(hostname, len, ats_ip_sa_cast(&ip), md5, cont, pDS, mark, dns_lookup_timeout);
   c->force_dns = force_dns;
   SET_CONTINUATION_HANDLER(c, (HostDBContHandler) & HostDBContinuation::probeEvent);
 
@@ -849,7 +850,7 @@ HostDBProcessor::getSRVbyname_imm(Continuation * cont, process_srv_info_pfn proc
 //
 Action *
 HostDBProcessor::getbyname_imm(Continuation * cont, process_hostdb_info_pfn process_hostdb_info,
-                               const char *hostname, int len, int port, int flags, int dns_lookup_timeout)
+                               const char *hostname, int len, int port, HostDBMark mark, int flags, int dns_lookup_timeout)
 {
   ink_debug_assert(cont->mutex->thread_holding == this_ethread());
   bool force_dns = false;
@@ -895,10 +896,10 @@ HostDBProcessor::getbyname_imm(Continuation * cont, process_hostdb_info_pfn proc
       }
       SplitDNSConfig::release((SplitDNS *) pSD);
     }
-    make_md5(md5, hostname, len, port, pServerLine);
+    make_md5(md5, hostname, len, port, pServerLine, mark);
   } else
 #endif // SPLIT_DNS
-    make_md5(md5, hostname, len, port, 0);
+    make_md5(md5, hostname, len, port, 0, mark);
 
   // Attempt to find the result in-line, for level 1 hits
   if (!force_dns) {
@@ -908,7 +909,7 @@ HostDBProcessor::getbyname_imm(Continuation * cont, process_hostdb_info_pfn proc
 
     // If we can get the lock and a level 1 probe succeeds, return
     if (lock) {
-      HostDBInfo *r = probe(bucket_mutex, md5, hostname, len, ip, pDS);
+      HostDBInfo *r = probe(bucket_mutex, md5, hostname, len, ip, pDS, mark);
       if (r) {
         Debug("hostdb", "immediate answer for %s", hostname ? hostname : "<addr>");
         HOSTDB_INCREMENT_DYN_STAT(hostdb_total_hits_stat);
@@ -922,7 +923,7 @@ HostDBProcessor::getbyname_imm(Continuation * cont, process_hostdb_info_pfn proc
 
   // Otherwise, create a continuation to do a deeper probe in the background
   HostDBContinuation *c = hostDBContAllocator.alloc();
-  c->init(hostname, len, ip, md5, cont, pDS, false, dns_lookup_timeout);
+  c->init(hostname, len, ip, md5, cont, pDS, mark, dns_lookup_timeout);
   c->force_dns = force_dns;
   SET_CONTINUATION_HANDLER(c, (HostDBContHandler) & HostDBContinuation::probeEvent);
 
@@ -983,10 +984,10 @@ HostDBProcessor::getbyname_imm_use_cache(Continuation * cont, process_hostdb_inf
 }
 
 static void
-do_setby(HostDBInfo * r, HostDBApplicationInfo * app, const char *hostname, sockaddr const* ip, bool is_srv = false)
+do_setby(HostDBInfo * r, HostDBApplicationInfo * app, const char *hostname, sockaddr const* ip, HostDBMark mark)
 {
   HostDBRoundRobin *rr = r->rr();
-
+  bool is_srv = mark == HOSTDB_IPV4;
   if (is_srv && (!r->is_srv || !rr))
     return;
 
@@ -1029,19 +1030,21 @@ HostDBProcessor::setby(const char *hostname, int len, sockaddr const* ip, HostDB
     return;
 
   INK_MD5 md5;
-  unsigned short port = ats_ip_port_host_order(ip);
+//  unsigned short port = ats_ip_port_host_order(ip);
 
   // if it is by name, INK_MD5 the name
   //
-  bool is_srv = false;
+  HostDBMark mark = HOSTDB_IPV4;
   if (hostname) {
     if (!len)
       len = strlen(hostname);
     if (target) {
-      is_srv = true;
-      make_md5(md5, hostname, len, 0, 0, true);
+      mark = HOSTDB_SRV;
+    } else if (ip->sa_family != AF_INET6){
+      mark = HOSTDB_IPV4;
     } else
-      make_md5(md5, hostname, len, port);
+      mark = HOSTDB_IPV6;
+    make_md5(md5, hostname, len, 0, NULL, mark);
   } else {
     // INK_MD5 the ip, pad on both sizes with 0's
     // so that it does not intersect the string space
@@ -1062,12 +1065,9 @@ HostDBProcessor::setby(const char *hostname, int len, sockaddr const* ip, HostDB
   MUTEX_TRY_LOCK(lock, mutex, thread);
 
   if (lock) {
-    HostDBInfo *r = probe(mutex, md5, hostname, len, ip, 0, 0, is_srv);
+    HostDBInfo *r = probe(mutex, md5, hostname, len, ip, NULL, false, mark);
     if (r) {
-      if (!is_srv)
-        do_setby(r, app, hostname, ip);
-      else
-        do_setby(r, app, target, ip, true);
+      do_setby(r, app, (mark == HOSTDB_SRV ? target : hostname), ip, mark);
     }
 
     return;
@@ -1075,10 +1075,7 @@ HostDBProcessor::setby(const char *hostname, int len, sockaddr const* ip, HostDB
   // Create a continuation to do a deaper probe in the background
 
   HostDBContinuation *c = hostDBContAllocator.alloc();
-  if (target != NULL)
-    c->init(hostname, len, ip, md5, NULL, NULL, true, 0, target);
-  else
-    c->init(hostname, len, ip, md5, NULL);
+  c->init(hostname, len, ip, md5, NULL, NULL, mark, 0, target);
   c->app.allotment.application1 = app->allotment.application1;
   c->app.allotment.application2 = app->allotment.application2;
   SET_CONTINUATION_HANDLER(c, (HostDBContHandler) & HostDBContinuation::setbyEvent);
@@ -1090,13 +1087,10 @@ HostDBContinuation::setbyEvent(int event, Event * e)
 {
   NOWARN_UNUSED(event);
   NOWARN_UNUSED(e);
-  HostDBInfo *r = probe(mutex, md5, name, namelen, &ip.sa, 0, false, is_srv_lookup);
+  HostDBInfo *r = probe(mutex, md5, name, namelen, &ip.sa, 0, false, db_mark);
 
   if (r) {
-    if (is_srv_lookup)
-      do_setby(r, &app, target, &ip.sa, is_srv_lookup);
-    else
-      do_setby(r, &app, name, &ip.sa, is_srv_lookup);
+    do_setby(r, &app, name, &ip.sa, db_mark);
   }
   hostdb_cont_free(this);
   return EVENT_DONE;
@@ -1614,7 +1608,7 @@ HostDBContinuation::dnsEvent(int event, HostEnt * e)
         return EVENT_CONT;
       }
       if (!action.cancelled)
-        reply_to_cont(action.continuation, r, is_srv_lookup);
+        reply_to_cont(action.continuation, r, db_mark);
     }
     // wake up everyone else who is waiting
     remove_trigger_pending_dns();
@@ -1808,7 +1802,7 @@ HostDBContinuation::probeEvent(int event, Event * e)
 
   if (!hostdb_enable || (!*name && !ats_is_ip(&ip.sa))) {
     if (action.continuation)
-      action.continuation->handleEvent(is_srv_lookup ? EVENT_SRV_LOOKUP : EVENT_HOST_DB_LOOKUP, NULL);
+      action.continuation->handleEvent(db_mark == HOSTDB_SRV ? EVENT_SRV_LOOKUP : EVENT_HOST_DB_LOOKUP, NULL);
 #ifdef NON_MODULAR
     if (from)
       do_put_response(from, 0, from_cont);
@@ -1828,7 +1822,7 @@ HostDBContinuation::probeEvent(int event, Event * e)
 
 #ifdef NON_MODULAR
     if (action.continuation && r)
-      reply_to_cont(action.continuation, r, is_srv_lookup);
+      reply_to_cont(action.continuation, r, db_mark);
 
     // Respond to any remote node
     //
@@ -1926,7 +1920,7 @@ HostDBContinuation::do_dns()
       if (m_pDS)
         dnsH = static_cast<DNSServer *>(m_pDS)->x_dnsH;
 #endif
-      pending_action = dnsProcessor.gethostbyname(this, name, dnsH, dns_lookup_timeout);
+      pending_action = dnsProcessor.gethostbyname(this, name, dnsH, dns_lookup_timeout, db_mark);
     } else if (is_srv()) {
       DNSHandler *dnsH = 0;
       Debug("dns_srv", "SRV lookup of %s", name);

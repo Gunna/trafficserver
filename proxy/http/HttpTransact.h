@@ -852,12 +852,13 @@ public:
     short srv_port;
     bool single_srv;
     bool update_srv;
+    int resolv_type;
     HostDBApplicationInfo srv_app;
 
     _DNSLookupInfo()
       : attempts(0), lookup_success(false), lookup_name(NULL),
         looking_up(UNDEFINED_LOOKUP), round_robin(false),
-        srv_lookup_sucess(false), srv_port(0), single_srv(false), update_srv(false)
+        srv_lookup_sucess(false), srv_port(0), single_srv(false), update_srv(false), resolv_type(0)
     {
       memset(&srv_hostname, 0, sizeof(srv_hostname));
       srv_app.allotment.application1 = 0;

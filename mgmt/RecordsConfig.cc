@@ -1097,6 +1097,13 @@ RecordElement RecordsConfig[] = {
   ,
   {RECT_CONFIG, "proxy.config.dns.dedicated_thread", RECD_INT, "0", RECU_RESTART_TS, RR_NULL, RECC_NULL, "[0-1]", RECA_NULL}
   ,
+  //############################################################################
+  //# 0 resolve type base on client
+  //# 1 resolve type ipv4
+  //# 2 resolve type ipv6
+  //#############################################################################
+  {RECT_CONFIG, "proxy.config.dns.resolv_type", RECD_INT, "0", RECU_DYNAMIC, RR_NULL, RECC_NULL, "[0-2]", RECA_NULL}
+  ,
 
   //##############################################################################
   //#

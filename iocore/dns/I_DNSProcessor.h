@@ -74,9 +74,9 @@ struct DNSProcessor: public Processor
   // NOTE: the HostEnt *block is freed when the function returns
   //
 
-  Action *gethostbyname(Continuation *cont, const char *name, DNSHandler *adnsH = 0, int timeout = 0);
+  Action *gethostbyname(Continuation *cont, const char *name, DNSHandler *adnsH = 0, int timeout = 0, HostDBMark mark = HOSTDB_IPV4);
   Action *getSRVbyname(Continuation *cont, const char *name, DNSHandler *adnsH = 0, int timeout = 0);
-  Action *gethostbyname(Continuation *cont, const char *name, int len, int timeout = 0);
+  Action *gethostbyname(Continuation *cont, const char *name, int len, int timeout = 0, HostDBMark mark = HOSTDB_IPV4);
   Action *gethostbyaddr(Continuation *cont, in_addr_t ip, int timeout = 0);
   Action *gethostbyaddr(Continuation *cont, sockaddr const* ip, int timeout = 0);
 
@@ -121,15 +121,15 @@ DNSProcessor::getSRVbyname(Continuation *cont, const char *name, DNSHandler *adn
 }
 
 inline Action *
-DNSProcessor::gethostbyname(Continuation *cont, const char *name, DNSHandler *adnsH, int timeout)
+DNSProcessor::gethostbyname(Continuation *cont, const char *name, DNSHandler *adnsH, int timeout, HostDBMark mark)
 {
-  return getby(name, 0, T_A, cont, adnsH, timeout);
+  return getby(name, 0, mark == HOSTDB_IPV4 ? T_A : T_AAAA, cont, adnsH, timeout);
 }
 
 inline Action *
-DNSProcessor::gethostbyname(Continuation *cont, const char *name, int len, int timeout)
+DNSProcessor::gethostbyname(Continuation *cont, const char *name, int len, int timeout, HostDBMark mark)
 {
-  return getby(name, len, T_A, cont, NULL, timeout);
+  return getby(name, len, mark == HOSTDB_IPV4 ? T_A : T_AAAA, cont, NULL, timeout);
 }
 
 inline Action *

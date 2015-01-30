@@ -40,6 +40,14 @@
 
 #define HOST_DB_MAX_ROUND_ROBIN_INFO         16
 #define HOST_DB_SRV_PREFIX "_http._tcp."
+
+enum HostDBMark
+{
+  HOSTDB_IPV4 = 0,
+  HOSTDB_IPV6,
+  HOSTDB_SRV
+};
+
 //
 // Data
 //
@@ -502,6 +510,7 @@ struct HostDBProcessor: public Processor
     const char *hostname,
     int len = 0,
     int port = 0,
+    HostDBMark mark = HOSTDB_IPV4,
     int flags = HOSTDB_DO_NOT_FORCE_DNS,
     int timeout = 0
   );
@@ -511,7 +520,7 @@ struct HostDBProcessor: public Processor
   /** Lookup Hostinfo by addr */
   Action *getbyaddr_re(Continuation * cont, sockaddr const* aip)
   {
-    return getby(cont, NULL, 0, 0, aip, false);
+    return getby(cont, NULL, 0, aip, false);
   }
 
 
@@ -563,7 +572,7 @@ struct HostDBProcessor: public Processor
     Continuation * cont,
     const char *hostname, int len,
     sockaddr const* ip,
-    bool aforce_dns, int timeout = 0
+    bool aforce_dns, HostDBMark mark = HOSTDB_IPV4, int timeout = 0
   );
   /** Set something.
       @a aip can carry address and / or port information. If setting just
