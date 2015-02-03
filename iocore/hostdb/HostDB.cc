@@ -903,20 +903,32 @@ HostDBProcessor::getbyname_imm(Continuation * cont, process_hostdb_info_pfn proc
 
   // Attempt to find the result in-line, for level 1 hits
   if (!force_dns) {
-    // find the partition lock
-    ProxyMutex *bucket_mutex = hostDB.lock_for_bucket((int) (fold_md5(md5) % hostDB.buckets));
-    MUTEX_TRY_LOCK(lock, bucket_mutex, thread);
+    bool retry;
+    do {
+      retry = false;
+      // find the partition lock
+      ProxyMutex *bucket_mutex = hostDB.lock_for_bucket((int) (fold_md5(md5) % hostDB.buckets));
+      MUTEX_TRY_LOCK(lock, bucket_mutex, thread);
 
-    // If we can get the lock and a level 1 probe succeeds, return
-    if (lock) {
-      HostDBInfo *r = probe(bucket_mutex, md5, hostname, len, ip, pDS, mark);
-      if (r) {
-        Debug("hostdb", "immediate answer for %s", hostname ? hostname : "<addr>");
-        HOSTDB_INCREMENT_DYN_STAT(hostdb_total_hits_stat);
-        (cont->*process_hostdb_info) (r);
-        return ACTION_RESULT_DONE;
+      // If we can get the lock and a level 1 probe succeeds, return
+      if (lock) {
+        HostDBInfo *r = probe(bucket_mutex, md5, hostname, len, ip, pDS, mark);
+        if (r) {
+          if (!r->failed()) {
+            Debug("hostdb", "immediate answer for %s", hostname ? hostname : "<addr>");
+            HOSTDB_INCREMENT_DYN_STAT(hostdb_total_hits_stat);
+            (cont->*process_hostdb_info) (r);
+            return ACTION_RESULT_DONE;
+          } else {
+            if (mark == HOSTDB_IPV6) {
+              mark = HOSTDB_IPV4;
+              make_md5(md5, hostname, len, port, 0, mark);
+              retry = true;
+            }
+          }
+        }
       }
-    }
+    } while (retry);
   }
 
   Debug("hostdb", "delaying force %d answer for %s [timeout %d]", force_dns, hostname, dns_lookup_timeout);
@@ -1397,7 +1409,7 @@ HostDBContinuation::dnsEvent(int event, HostEnt * e)
       return EVENT_CONT;
     }
     if (!action.cancelled && action.continuation)
-      action.continuation->handleEvent(EVENT_HOST_DB_LOOKUP, NULL);
+      action.continuation->handleEvent(db_mark != HOSTDB_SRV ? EVENT_HOST_DB_LOOKUP : EVENT_SRV_LOOKUP, NULL);
     action = NULL;
     // do not exit yet, wait to see if we can insert into DB
     timeout = thread->schedule_in(this, HRTIME_SECONDS(hostdb_insert_timeout));
@@ -1600,6 +1612,18 @@ HostDBContinuation::dnsEvent(int event, HostEnt * e)
     // try to callback the user
     //
     if (action.continuation) {
+      if (failed && db_mark == HOSTDB_IPV6) {
+        // wake up everyone else who is waiting
+        remove_trigger_pending_dns();
+        // we retry the ipv4
+        int p = ntohs(ip.port());
+        db_mark = HOSTDB_IPV4;
+        make_md5(md5, name, namelen, p, NULL, db_mark);
+        mutex = hostDB.lock_for_bucket((int) (fold_md5(md5) % hostDB.buckets));
+        SET_HANDLER((HostDBContHandler) & HostDBContinuation::probeEvent);
+        thread->schedule_in(this, HOST_DB_RETRY_PERIOD);
+        return EVENT_CONT;
+      }
       MUTEX_TRY_LOCK_FOR(lock, action.mutex, thread, action.continuation);
       if (!lock) {
         remove_trigger_pending_dns();
@@ -1811,24 +1835,37 @@ HostDBContinuation::probeEvent(int event, Event * e)
     return EVENT_DONE;
   }
 
+  bool retry;
+  HostDBInfo *r = NULL;
   if (!force_dns) {
 
-    // Do the probe
-    //
-    HostDBInfo *r = probe(mutex, md5, name, namelen, &ip.sa, m_pDS);
+    do {
+      // Do the probe
+      //
+      retry = false;
+      r = probe(mutex, md5, name, namelen, &ip.sa, m_pDS);
 
-    if (r)
-      HOSTDB_INCREMENT_DYN_STAT(hostdb_total_hits_stat);
+      if (r) {
+        HOSTDB_INCREMENT_DYN_STAT(hostdb_total_hits_stat);
 
-#ifdef NON_MODULAR
-    if (action.continuation && r)
-      reply_to_cont(action.continuation, r, db_mark);
+        if (action.continuation) {
+          if (r->failed() && db_mark == HOSTDB_IPV6) {
+            retry = true;
+            int p = ntohs(ip.port());
+            db_mark = HOSTDB_IPV4;
+            make_md5(md5, name, namelen, p, NULL, db_mark);
+            mutex = hostDB.lock_for_bucket(
+                (int) (fold_md5(md5) % hostDB.buckets));
+            SET_HANDLER((HostDBContHandler) &HostDBContinuation::probeEvent);
+            t->schedule_in(this, HOST_DB_RETRY_PERIOD);
+            return EVENT_CONT;
+          } else {
+            reply_to_cont(action.continuation, r, db_mark);
+          }
+        }
+      }
 
-    // Respond to any remote node
-    //
-    if (from)
-      do_put_response(from, r, from_cont);
-#endif
+    } while (retry);
 
     // If it suceeds or it was a remote probe, we are done
     //

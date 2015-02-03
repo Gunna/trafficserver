@@ -1059,8 +1059,12 @@ HttpTransact::ModifyRequest(State* s)
     }
   }
 
-  if (s->method == HTTP_WKSIDX_CONNECT && !request->is_port_in_header())
-    url->port_set(80);
+  if (s->method == HTTP_WKSIDX_CONNECT) {
+    if (!request->is_port_in_header())
+      url->port_set(80);
+    if (scheme < 0)
+      url->scheme_set(URL_SCHEME_HTTP, URL_LEN_HTTP);
+  }
 
   // Ugly - this must come after the call to url->scheme_set or
   // it can't get the scheme properly and the wrong data is cached.
