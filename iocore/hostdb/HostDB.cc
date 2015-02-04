@@ -912,7 +912,7 @@ HostDBProcessor::getbyname_imm(Continuation * cont, process_hostdb_info_pfn proc
 
       // If we can get the lock and a level 1 probe succeeds, return
       if (lock) {
-        HostDBInfo *r = probe(bucket_mutex, md5, hostname, len, ip, pDS, mark);
+        HostDBInfo *r = probe(bucket_mutex, md5, hostname, len, ip, pDS, false, mark);
         if (r) {
           if (!r->failed()) {
             Debug("hostdb", "immediate answer for %s", hostname ? hostname : "<addr>");
@@ -1428,7 +1428,7 @@ HostDBContinuation::dnsEvent(int event, HostEnt * e)
     ttl = failed ? 0 : e->ttl / 60;
     int ttl_seconds = failed ? 0 : e->ttl;      //ebalsa: moving to second accuracy
 
-    HostDBInfo *old_r = probe(mutex, md5, name, namelen, &ip.sa, m_pDS, true);
+    HostDBInfo *old_r = probe(mutex, md5, name, namelen, &ip.sa, m_pDS, true, db_mark);
     HostDBInfo old_info;
     HostDBRoundRobin *old_rr_data = NULL;
     if (old_r) {
@@ -1843,7 +1843,7 @@ HostDBContinuation::probeEvent(int event, Event * e)
       // Do the probe
       //
       retry = false;
-      r = probe(mutex, md5, name, namelen, &ip.sa, m_pDS);
+      r = probe(mutex, md5, name, namelen, &ip.sa, m_pDS, false, db_mark);
 
       if (r) {
         HOSTDB_INCREMENT_DYN_STAT(hostdb_total_hits_stat);
