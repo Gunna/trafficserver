@@ -330,6 +330,7 @@ CacheVC::openReadFromWriterHead(int event, Event * e)
       if (first_buf._ptr()) {
         Doc *doc = (Doc *) first_buf->data();
         if (doc_len == doc->data_len()) {
+          frag_len = doc->flen;
           buf = first_buf;
           doc_pos = doc->prefix_len();
           SET_HANDLER(&CacheVC::openReadMain);

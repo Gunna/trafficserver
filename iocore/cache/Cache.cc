@@ -3847,7 +3847,7 @@ CacheWriterEntry::get_writer_meta(CacheVC *vc, bool *header_only, bool *nd)
       ink_mutex_release(mutex);
       vc->cw = NULL;
       return -1;
-    } else if (doc_len < 0) {
+    } else if (doc_len < 0 || (no_data && !total_len)) {
       vc->set_read_while_write_in_progress();
       ink_assert(!vc->signal_link.next && !vc->signal_link.prev);
       sq_readers.enqueue(vc);
@@ -3856,7 +3856,8 @@ CacheWriterEntry::get_writer_meta(CacheVC *vc, bool *header_only, bool *nd)
       return 1;
     }
   }
-
+  *nd = no_data;
+  vc->earliest_key = earliest_key;
   vc->doc_len = doc_len;
   ink_mutex_release(mutex);
   return 0;
