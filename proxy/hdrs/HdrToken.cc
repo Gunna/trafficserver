@@ -177,6 +177,10 @@ const char *_hdrtoken_strs[] = {
   "TRACE",
   "PUSH",
   "X-ID",
+  "PRI",
+  "PROPFIND",
+  "REPORT",
+  "SEARCH",
   
   // Header extensions
   "Owner-Left-Time",
@@ -215,6 +219,11 @@ HdrTokenTypeBinding _hdrtoken_strs_type_initializers[] = {
   {"PUT", HDRTOKEN_TYPE_METHOD},
   {"TRACE", HDRTOKEN_TYPE_METHOD},
   {"PUSH", HDRTOKEN_TYPE_METHOD},
+  {"X-ID", HDRTOKEN_TYPE_METHOD},
+  {"PRI", HDRTOKEN_TYPE_METHOD},
+  {"PROPFIND", HDRTOKEN_TYPE_METHOD},
+  {"REPORT", HDRTOKEN_TYPE_METHOD},
+  {"SEARCH", HDRTOKEN_TYPE_METHOD},
 
   {"max-age", HDRTOKEN_TYPE_CACHE_CONTROL},
   {"max-stale", HDRTOKEN_TYPE_CACHE_CONTROL},
@@ -505,6 +514,10 @@ const char *_hdrtoken_commonly_tokenized_strs[] = {
   "TRACE",
   "PUSH",
   "X-ID",
+  "PRI",
+  "PROPFIND",
+  "REPORT",
+  "SEARCH",
   
   // Header extensions
   "Owner-Left-Time",

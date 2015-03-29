@@ -373,6 +373,11 @@ extern const char *HTTP_METHOD_PURGE;
 extern const char *HTTP_METHOD_PUT;
 extern const char *HTTP_METHOD_TRACE;
 extern const char *HTTP_METHOD_PUSH;
+extern const char *HTTP_METHOD_XID;
+extern const char *HTTP_METHOD_PRI;
+extern const char *HTTP_METHOD_PROPFIND;
+extern const char *HTTP_METHOD_REPORT;
+extern const char *HTTP_METHOD_SEARCH;
 
 extern int HTTP_WKSIDX_CONNECT;
 extern int HTTP_WKSIDX_DELETE;
@@ -385,6 +390,11 @@ extern int HTTP_WKSIDX_PURGE;
 extern int HTTP_WKSIDX_PUT;
 extern int HTTP_WKSIDX_TRACE;
 extern int HTTP_WKSIDX_PUSH;
+extern int HTTP_WKSIDX_XID;
+extern int HTTP_WKSIDX_PRI;
+extern int HTTP_WKSIDX_PROPFIND;
+extern int HTTP_WKSIDX_REPORT;
+extern int HTTP_WKSIDX_SEARCH;
 extern int HTTP_WKSIDX_METHODS_CNT;
 
 
@@ -399,6 +409,11 @@ extern int HTTP_LEN_PURGE;
 extern int HTTP_LEN_PUT;
 extern int HTTP_LEN_TRACE;
 extern int HTTP_LEN_PUSH;
+extern int HTTP_LEN_XID;
+extern int HTTP_LEN_PRI;
+extern int HTTP_LEN_PROPFIND;
+extern int HTTP_LEN_REPORT;
+extern int HTTP_LEN_SEARCH;
 
 extern const char *HTTP_VALUE_BYTES;
 extern const char *HTTP_VALUE_CHUNKED;

@@ -61,6 +61,12 @@ const char *HTTP_METHOD_PURGE;
 const char *HTTP_METHOD_PUT;
 const char *HTTP_METHOD_TRACE;
 const char *HTTP_METHOD_PUSH;
+const char *HTTP_METHOD_XID;
+const char *HTTP_METHOD_PRI;
+const char *HTTP_METHOD_PROPFIND;
+const char *HTTP_METHOD_REPORT;
+const char *HTTP_METHOD_SEARCH;
+
 
 int HTTP_WKSIDX_CONNECT;
 int HTTP_WKSIDX_DELETE;
@@ -73,6 +79,11 @@ int HTTP_WKSIDX_PURGE;
 int HTTP_WKSIDX_PUT;
 int HTTP_WKSIDX_TRACE;
 int HTTP_WKSIDX_PUSH;
+int HTTP_WKSIDX_XID;
+int HTTP_WKSIDX_PRI;
+int HTTP_WKSIDX_PROPFIND;
+int HTTP_WKSIDX_REPORT;
+int HTTP_WKSIDX_SEARCH;
 int HTTP_WKSIDX_METHODS_CNT = 0;
 
 int HTTP_LEN_CONNECT;
@@ -86,6 +97,11 @@ int HTTP_LEN_PURGE;
 int HTTP_LEN_PUT;
 int HTTP_LEN_TRACE;
 int HTTP_LEN_PUSH;
+int HTTP_LEN_XID;
+int HTTP_LEN_PRI;
+int HTTP_LEN_PROPFIND;
+int HTTP_LEN_REPORT;
+int HTTP_LEN_SEARCH;
 
 const char *HTTP_VALUE_BYTES;
 const char *HTTP_VALUE_CHUNKED;
@@ -197,6 +213,11 @@ http_init()
     HTTP_METHOD_PUT = hdrtoken_string_to_wks("PUT");
     HTTP_METHOD_TRACE = hdrtoken_string_to_wks("TRACE");
     HTTP_METHOD_PUSH = hdrtoken_string_to_wks("PUSH");
+    HTTP_METHOD_XID = hdrtoken_string_to_wks("X-ID");
+    HTTP_METHOD_PRI = hdrtoken_string_to_wks("PRI");
+    HTTP_METHOD_PROPFIND = hdrtoken_string_to_wks("PROPFIND");
+    HTTP_METHOD_REPORT = hdrtoken_string_to_wks("REPORT");
+    HTTP_METHOD_SEARCH = hdrtoken_string_to_wks("SEARCH");
 
     // HTTP methods index calculation. Don't forget to count them!
     // Don't change the order of calculation! Each index has related bitmask (see http quick filter)
@@ -222,6 +243,16 @@ http_init()
     HTTP_WKSIDX_METHODS_CNT++;
     HTTP_WKSIDX_PUSH = hdrtoken_wks_to_index(HTTP_METHOD_PUSH);
     HTTP_WKSIDX_METHODS_CNT++;
+    HTTP_WKSIDX_XID = hdrtoken_wks_to_index(HTTP_METHOD_XID);
+    HTTP_WKSIDX_METHODS_CNT++;
+    HTTP_WKSIDX_PRI = hdrtoken_wks_to_index(HTTP_METHOD_PRI);
+    HTTP_WKSIDX_METHODS_CNT++;
+    HTTP_WKSIDX_PROPFIND = hdrtoken_wks_to_index(HTTP_METHOD_PROPFIND);
+    HTTP_WKSIDX_METHODS_CNT++;
+    HTTP_WKSIDX_REPORT = hdrtoken_wks_to_index(HTTP_METHOD_REPORT);
+    HTTP_WKSIDX_METHODS_CNT++;
+    HTTP_WKSIDX_SEARCH = hdrtoken_wks_to_index(HTTP_METHOD_SEARCH);
+    HTTP_WKSIDX_METHODS_CNT++;
 
 
     HTTP_LEN_CONNECT = hdrtoken_wks_to_length(HTTP_METHOD_CONNECT);
@@ -235,6 +266,12 @@ http_init()
     HTTP_LEN_PUT = hdrtoken_wks_to_length(HTTP_METHOD_PUT);
     HTTP_LEN_TRACE = hdrtoken_wks_to_length(HTTP_METHOD_TRACE);
     HTTP_LEN_PUSH = hdrtoken_wks_to_length(HTTP_METHOD_PUSH);
+    HTTP_LEN_XID = hdrtoken_wks_to_length(HTTP_METHOD_XID);
+    HTTP_LEN_PRI = hdrtoken_wks_to_length(HTTP_METHOD_PRI);
+    HTTP_LEN_PROPFIND = hdrtoken_wks_to_length(HTTP_METHOD_PROPFIND);
+    HTTP_LEN_REPORT = hdrtoken_wks_to_length(HTTP_METHOD_REPORT);
+    HTTP_LEN_SEARCH = hdrtoken_wks_to_length(HTTP_METHOD_SEARCH);
+
 
     HTTP_VALUE_BYTES = hdrtoken_string_to_wks("bytes");
     HTTP_VALUE_CHUNKED = hdrtoken_string_to_wks("chunked");

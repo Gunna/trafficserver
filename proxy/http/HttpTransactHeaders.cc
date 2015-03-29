@@ -90,8 +90,13 @@ HttpTransactHeaders::insert_supported_methods_in_response(HTTPHdr *response, int
     HTTP_METHOD_POST,
     HTTP_METHOD_PURGE,
     HTTP_METHOD_PUT,
-    HTTP_METHOD_PUSH,
     HTTP_METHOD_TRACE,
+    HTTP_METHOD_PUSH,
+    HTTP_METHOD_XID,
+    HTTP_METHOD_PRI,
+    HTTP_METHOD_PROPFIND,
+    HTTP_METHOD_REPORT,
+    HTTP_METHOD_SEARCH,
   };
   char inline_buffer[64];
   char *alloced_buffer, *value_buffer;
