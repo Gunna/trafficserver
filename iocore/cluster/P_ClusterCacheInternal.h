@@ -427,7 +427,7 @@ free_CacheCont(CacheContinuation *c) {
   ink_assert(c->magicno == (int) c->MagicNo && !c->expect_next);
 //  ink_assert(!c->cache_op_ClusterFunction);
   if (c->pending_action) {
-    c->pending_action->cancel();
+    if (c->pending_action != ACTION_RESULT_DONE) c->pending_action->cancel();
     c->pending_action = NULL;
   }
   if (c->cache_vc) {
