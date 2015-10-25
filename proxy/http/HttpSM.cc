@@ -352,7 +352,7 @@ history[pos].fileline = __FILE__ ":" _REMEMBER (__LINE__);
 
 #define REMEMBER(e,r) \
 { if (REMEMBER_EVENT_FILTER(e)) { \
-    add_history_entry(__FILE__ ":" _REMEMBER (__LINE__), e, r); }}
+    add_history_entry( __FILE__ ":" _REMEMBER(__LINE__), __FUNCTION__, e, r); }}
 
 #define DebugSM(tag, ...) DebugSpecific(debug_on, tag, __VA_ARGS__)
 

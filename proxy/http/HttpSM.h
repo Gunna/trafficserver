@@ -259,7 +259,7 @@ public:
   void txn_hook_prepend(TSHttpHookID id, INKContInternal * cont);
   APIHook *txn_hook_get(TSHttpHookID id);
 
-  void add_history_entry(const char *fileline, int event, int reentrant);
+  void add_history_entry(const char *fileline, const char *funcname, int event, int reentrant);
   void add_cache_sm();
   bool decide_cached_url(URL * s_url);
   inline URL *get_cache_sm_lookup_url() {
@@ -297,6 +297,7 @@ protected:
   struct History
   {
     const char *fileline;
+    const char *funcname;
     unsigned short event;
     short reentrancy;
   };
@@ -581,10 +582,11 @@ HttpSM::write_response_header_into_buffer(HTTPHdr * h, MIOBuffer * b)
 }
 
 inline void
-HttpSM::add_history_entry(const char *fileline, int event, int reentrant)
+HttpSM::add_history_entry(const char *fileline, const char *funcname, int event, int reentrant)
 {
   int pos = history_pos++ % HISTORY_SIZE;
   history[pos].fileline = fileline;
+  history[pos].funcname = funcname;
   history[pos].event = (unsigned short) event;
   history[pos].reentrancy = (short) reentrant;
 }

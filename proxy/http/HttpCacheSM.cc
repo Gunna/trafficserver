@@ -42,7 +42,7 @@
 #define __REMEMBER(x)  #x
 #define _REMEMBER(x)   __REMEMBER(x)
 
-#define REMEMBER(e,r) master_sm->add_history_entry(__FILE__ ":" _REMEMBER (__LINE__), e, r);
+#define REMEMBER(e,r) master_sm->add_history_entry(__FILE__ ":" _REMEMBER (__LINE__), __FUNCTION__, e, r);
 
 
 HttpCacheAction::HttpCacheAction()

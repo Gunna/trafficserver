@@ -217,7 +217,7 @@ HttpPagesHandler::dump_history(HttpSM * sm)
 
   resp_add("<h4> History</h4>");
 
-  resp_begin_table(1, 3, 60);
+  resp_begin_table(1, 4, 60);
 
   int size;
 
@@ -237,7 +237,11 @@ HttpPagesHandler::dump_history(HttpSM * sm)
     resp_end_column();
 
     resp_begin_column();
-    resp_add("%u", (unsigned int) sm->history[i].event);
+    resp_add("%s", sm->history[i].funcname);
+    resp_end_column();
+
+    resp_begin_column();
+    resp_add("%d:%s", sm->history[i].event, HttpDebugNames::get_event_name(sm->history[i].event));
     resp_end_column();
 
     resp_begin_column();
